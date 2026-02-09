@@ -179,6 +179,24 @@ DEFAULT_LUNCH_BREAK: Dict[str, str] = {"start": "13:00", "end": "14:00"}
 
 APPOINTMENT_BUFFER_MINUTES = 15
 
+# =============================================================================
+# PIPELINE SELECTION — Switch between English and Urdu voice pipelines
+# =============================================================================
+# Set ACTIVE_PIPELINE="urdu" to activate Urdu pipeline, "english" to keep English.
+# Both pipelines remain in codebase; only the selected one is routed/used at runtime.
+# English pipeline code is NEVER deleted — just disabled via this flag.
+
+ACTIVE_PIPELINE = os.getenv("ACTIVE_PIPELINE", "english").strip().lower()  # "english" | "urdu"
+
+# Urdu pipeline provider config
+AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY", "")
+AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "")
+URDU_TTS_VOICE = os.getenv("URDU_TTS_VOICE", "ur-PK-UzmaNeural")  # or "ur-PK-AsadNeural"
+URDU_STT_LANGUAGE = os.getenv("URDU_STT_LANGUAGE", "ur")  # "ur" or "multi" for code-switching
+URDU_LLM_MODEL = os.getenv("URDU_LLM_MODEL", "gpt-4o-mini")  # Must understand/respond in Urdu
+
+logger.info(f"[PIPELINE] Active pipeline: {ACTIVE_PIPELINE}")
+
 
 def map_call_outcome(raw_outcome: str | None, booking_made: bool) -> str:
     """

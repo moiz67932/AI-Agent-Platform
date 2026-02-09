@@ -46,6 +46,8 @@ from services.database_service import fetch_clinic_context_optimized
 from services.scheduling_service import load_schedule_from_settings
 from tools.assistant_tools import AssistantTools, update_global_clinic_info
 from prompts.agent_prompts import A_TIER_PROMPT
+from pipelines.pipeline_config import get_pipeline_components
+from pipelines.urdu_prompt import URDU_SYSTEM_PROMPT
 from utils.phone_utils import (
     _normalize_phone_preserve_plus,
     _normalize_sip_user_to_e164,
@@ -73,20 +75,24 @@ _ACTIVE_ROOMS: Dict[str, str] = {}
 class RoomGuard:
     """
     Robust Room Guard - prevents duplicate execution across multiple instances.
-    Attempts to use Supabase 'room_locks' table for shared state.
+    Uses Supabase 'room_locks' table for shared state with stale-lock recovery.
     """
+    # How old a lock must be (seconds) before we consider it stale and reclaim it.
+    STALE_LOCK_SECONDS = 120  # 2 minutes — a crashed worker won't clean up
+
     @staticmethod
     async def claim(room_name: str, worker_id: str) -> bool:
-        if not room_name: return True
+        if not room_name:
+            return True
         if room_name in _ACTIVE_ROOMS:
             return _ACTIVE_ROOMS[room_name] == worker_id
-        
+
         try:
-            # 2. Shared check via Supabase
+            # Attempt insert
             await asyncio.to_thread(
                 lambda: supabase.table("room_locks").insert({
                     "room_name": room_name,
-                    "worker_id": worker_id
+                    "worker_id": worker_id,
                 }).execute()
             )
             _ACTIVE_ROOMS[room_name] = worker_id
@@ -94,7 +100,7 @@ class RoomGuard:
             return True
         except Exception as e:
             err_msg = str(e).lower()
-            
+
             # Case A: Table missing (404 / relation does not exist)
             if "not found" in err_msg or "404" in err_msg or ("relation" in err_msg and "not exist" in err_msg):
                 if room_name not in _ACTIVE_ROOMS:
@@ -102,18 +108,67 @@ class RoomGuard:
                     logger.warning(f"[GUARD] ⚠ 'room_locks' table missing in Supabase. Falling back to local memory-based claim for {room_name}")
                     return True
                 return _ACTIVE_ROOMS[room_name] == worker_id
-            
-            # Case B: Already exists (409 / Primary Key Violation) - check if WE own it
+
+            # Case B: Conflict (409 / duplicate key) — check if stale, then reclaim
             try:
                 check = await asyncio.to_thread(
-                    lambda: supabase.table("room_locks").select("worker_id").eq("room_name", room_name).execute()
+                    lambda: supabase.table("room_locks")
+                        .select("worker_id, created_at")
+                        .eq("room_name", room_name)
+                        .execute()
                 )
-                if check.data and check.data[0]["worker_id"] == worker_id:
-                    _ACTIVE_ROOMS[room_name] = worker_id
-                    return True
-            except: pass
-            
-            logger.warning(f"[GUARD] ❌ Room {room_name} already claimed by another worker.")
+                if check.data:
+                    existing = check.data[0]
+                    existing_worker = existing["worker_id"]
+
+                    # If we already own it, just accept
+                    if existing_worker == worker_id:
+                        _ACTIVE_ROOMS[room_name] = worker_id
+                        return True
+
+                    # Check if the lock is stale (old enough to reclaim)
+                    is_stale = False
+                    created_at_str = existing.get("created_at")
+                    if created_at_str:
+                        try:
+                            from datetime import datetime, timezone
+                            # Parse ISO timestamp from Supabase
+                            created_at_str = created_at_str.replace("Z", "+00:00")
+                            created_at = datetime.fromisoformat(created_at_str)
+                            age_seconds = (datetime.now(timezone.utc) - created_at).total_seconds()
+                            if age_seconds > RoomGuard.STALE_LOCK_SECONDS:
+                                is_stale = True
+                                logger.info(f"[GUARD] Stale lock detected for {room_name} (age={age_seconds:.0f}s, owner={existing_worker})")
+                        except Exception as parse_err:
+                            # If we can't parse timestamp, treat as stale to avoid permanent deadlock
+                            is_stale = True
+                            logger.warning(f"[GUARD] Could not parse lock timestamp, treating as stale: {parse_err}")
+                    else:
+                        # No created_at column — treat as stale to avoid deadlock
+                        is_stale = True
+
+                    if is_stale:
+                        # Delete the stale lock and re-insert ours
+                        await asyncio.to_thread(
+                            lambda: supabase.table("room_locks")
+                                .delete()
+                                .eq("room_name", room_name)
+                                .execute()
+                        )
+                        await asyncio.to_thread(
+                            lambda: supabase.table("room_locks").insert({
+                                "room_name": room_name,
+                                "worker_id": worker_id,
+                            }).execute()
+                        )
+                        _ACTIVE_ROOMS[room_name] = worker_id
+                        logger.info(f"[GUARD] ✓ Reclaimed stale lock for {room_name} by {worker_id}")
+                        return True
+
+            except Exception as inner_err:
+                logger.warning(f"[GUARD] Error during stale-lock check: {inner_err}")
+
+            logger.warning(f"[GUARD] ❌ Room {room_name} already claimed by another active worker.")
             return False
 
     @staticmethod
@@ -123,11 +178,10 @@ class RoomGuard:
             await asyncio.to_thread(
                 lambda: supabase.table("room_locks").delete().eq("room_name", room_name).eq("worker_id", worker_id).execute()
             )
-        except: pass
+        except:
+            pass
 
 async def entrypoint(ctx: JobContext):
-    global _GLOBAL_STATE, _GLOBAL_CLINIC_TZ, _GLOBAL_CLINIC_INFO, _REFRESH_AGENT_MEMORY, _GLOBAL_AGENT_SETTINGS, _GLOBAL_SCHEDULE
-    
     # Generate unique worker ID for this instance
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
     room_name = ctx.room.name if ctx.room else None
@@ -141,7 +195,19 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[GUARD] ❌ Room {room_name} already claimed by another worker. Exiting duplicate.")
             return
         logger.info(f"[GUARD] ✓ Room {room_name} claimed by {worker_id}")
-    
+
+    try:
+        await _entrypoint_inner(ctx, worker_id, room_name)
+    finally:
+        # Always release guard on exit — prevents stale locks on crash
+        if room_name:
+            await RoomGuard.release(room_name, worker_id)
+            logger.info(f"[GUARD] ✓ Room {room_name} released by {worker_id} (finally)")
+
+
+async def _entrypoint_inner(ctx: JobContext, worker_id: str, room_name: str | None):
+    global _GLOBAL_STATE, _GLOBAL_CLINIC_TZ, _GLOBAL_CLINIC_INFO, _REFRESH_AGENT_MEMORY, _GLOBAL_AGENT_SETTINGS, _GLOBAL_SCHEDULE
+
     # 1. INITIALIZE STATE & LOGGER IMMEDIATELY
     state = PatientState()
     _GLOBAL_STATE = state
@@ -170,12 +236,26 @@ async def entrypoint(ctx: JobContext):
     agent_lang = "en-US"
     used_fallback_called_num = False
     
-    # Prompt Helper
+    # Detect active pipeline from config
+    _active_pipeline = os.getenv("ACTIVE_PIPELINE", "english").strip().lower()
+    _is_urdu = (_active_pipeline == "urdu")
+    logger.info(f"[PIPELINE] Active pipeline in entrypoint: {_active_pipeline}")
+    
+    # Prompt Helper — selects English or Urdu prompt based on pipeline
     def get_updated_instructions() -> str:
-        return A_TIER_PROMPT.format(
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo(clinic_tz))
+        current_date_str = now.strftime("%A, %B %d, %Y")
+        current_time_str = now.strftime("%I:%M %p")
+        
+        prompt_template = URDU_SYSTEM_PROMPT if _is_urdu else A_TIER_PROMPT
+        return prompt_template.format(
             agent_name=agent_name,
             clinic_name=clinic_name,
             timezone=clinic_tz,
+            current_date=current_date_str,
+            current_time=current_time_str,
             state_summary=state.detailed_state_for_prompt(),
         )
     
@@ -202,37 +282,29 @@ async def entrypoint(ctx: JobContext):
     assistant_tools = AssistantTools(state)
     function_tools = llm.find_function_tools(assistant_tools)
     
-    llm_instance = openai_plugin.LLM(model="gpt-4o-mini", temperature=0.7)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔀 PIPELINE ROUTER — Select STT, LLM, TTS based on ACTIVE_PIPELINE
+    # ═══════════════════════════════════════════════════════════════════════════
+    # English pipeline code is NOT deleted — it lives in build_english_pipeline().
+    # When ACTIVE_PIPELINE="english", the exact same Deepgram+GPT+Cartesia stack runs.
+    # When ACTIVE_PIPELINE="urdu", Deepgram(ur)+GPT(Urdu prompt)+Azure TTS runs.
     
-    if os.getenv("DEEPGRAM_API_KEY"):
-        # Introspection for Deepgram config to avoid "endpointing" error
-        stt_base_config = {"model": "nova-2-general", "language": agent_lang}
-        
-        # Check what arguments deepgram_plugin.STT accepts
-        stt_sig = inspect.signature(deepgram_plugin.STT.__init__)
-        allowed_params = set(stt_sig.parameters.keys())
-        has_kwargs = any(p.kind == p.VAR_KEYWORD for p in stt_sig.parameters.values())
-
-        stt_kwargs = stt_base_config.copy()
-        
-        # Only add aggressive endpointing if supported or if kwargs allowed
-        if STT_AGGRESSIVE_ENDPOINTING:
-            if "endpointing_ms" in allowed_params or has_kwargs:
-                stt_kwargs["endpointing_ms"] = 300
-            elif "utterance_end_ms" in allowed_params or has_kwargs:
-                 # Fallback/Alternative key if endpointing_ms isn't the one
-                 stt_kwargs["utterance_end_ms"] = 300
-        
-        stt_instance = deepgram_plugin.STT(**stt_kwargs)
-    else:
-        stt_instance = openai_plugin.STT(model="gpt-4o-transcribe", language="en")
+    pipeline_components = get_pipeline_components(
+        active_pipeline=_active_pipeline,
+        agent_lang=agent_lang,
+        stt_aggressive=STT_AGGRESSIVE_ENDPOINTING,
+        latency_debug=LATENCY_DEBUG,
+    )
+    
+    stt_instance = pipeline_components["stt"]
+    llm_instance = pipeline_components["llm"]
+    tts_instance = pipeline_components["tts"]
+    _pipeline_filler_phrases = pipeline_components["filler_phrases"]
+    _pipeline_name = pipeline_components["pipeline_name"]
+    
+    logger.info(f"[PIPELINE] ✓ Active pipeline: {_pipeline_name}")
         
     vad_instance = silero.VAD.load(min_speech_duration=VAD_MIN_SPEECH_DURATION, min_silence_duration=VAD_MIN_SILENCE_DURATION)
-    
-    if os.getenv("CARTESIA_API_KEY"):
-        tts_instance = cartesia_plugin.TTS(model="sonic-3", voice=os.getenv("CARTESIA_VOICE_ID", "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"))
-    else:
-        tts_instance = openai_plugin.TTS(model="tts-1", voice="alloy")
 
 
     # 3. INITIALIZE AGENT & SESSION
@@ -450,7 +522,7 @@ async def entrypoint(ctx: JobContext):
         if active_filler_handle.get("is_filler"): return
         
         import random
-        filler = random.choice(FILLER_PHRASES)
+        filler = random.choice(_pipeline_filler_phrases)
         state.filler_active = True
         state.filler_turn_id = str(current_turn)
         asyncio.create_task(_send_filler_async(filler))
@@ -465,7 +537,7 @@ async def entrypoint(ctx: JobContext):
         except: pass
         
         handle = active_filler_handle.get("handle")
-        is_filler = speech_text and any(speech_text.strip().startswith(f) for f in FILLER_PHRASES)
+        is_filler = speech_text and any(speech_text.strip().startswith(f) for f in _pipeline_filler_phrases)
         if handle and not is_filler: _interrupt_filler()
         if not is_filler: _turn_metrics.log_turn(extra=f"response='{speech_text[:50]}'")
 
@@ -688,16 +760,27 @@ async def entrypoint(ctx: JobContext):
             except asyncio.TimeoutError:
                 pass  # we'll greet with fallback if DB is slow
 
-        # If background updater already populated settings, use DB greeting_text first
+        # Pipeline-aware greeting: Urdu or English
         greeting = None
-        if settings and settings.get("greeting_text"):
-            greeting = settings["greeting_text"]
-        elif clinic_name:
-            greeting = f"Hello! This is {clinic_name}. How can I help you today?"
+        if _is_urdu:
+            # Urdu greeting
+            if settings and settings.get("greeting_text_urdu"):
+                greeting = settings["greeting_text_urdu"]
+            elif clinic_name:
+                greeting = f"\u0627\u0644\u0633\u0644\u0627\u0645 \u0639\u0644\u06cc\u06a9\u0645! {clinic_name} \u0645\u06cc\u06ba \u06a9\u0627\u0644 \u06a9\u0631\u0646\u06d2 \u06a9\u0627 \u0634\u06a9\u0631\u06cc\u06c1\u06d4 \u0645\u06cc\u06ba \u0622\u067e \u06a9\u06cc \u06a9\u06cc\u0627 \u0645\u062f\u062f \u06a9\u0631 \u0633\u06a9\u062a\u06cc \u06c1\u0648\u06ba\u061f"
+            else:
+                greeting = "\u0627\u0644\u0633\u0644\u0627\u0645 \u0639\u0644\u06cc\u06a9\u0645! \u06a9\u0627\u0644 \u06a9\u0631\u0646\u06d2 \u06a9\u0627 \u0634\u06a9\u0631\u06cc\u06c1\u06d4 \u0645\u06cc\u06ba \u0622\u067e \u06a9\u06cc \u06a9\u06cc\u0627 \u0645\u062f\u062f \u06a9\u0631 \u0633\u06a9\u062a\u06cc \u06c1\u0648\u06ba\u061f"
+            logger.info(f"[GREETING-UR] Urdu greeting selected")
         else:
-            greeting = "Hello! Thanks for calling. How can I help you today?"
+            # English greeting (ORIGINAL — UNCHANGED)
+            if settings and settings.get("greeting_text"):
+                greeting = settings["greeting_text"]
+            elif clinic_name:
+                greeting = f"Hello! This is {clinic_name}. How can I help you today?"
+            else:
+                greeting = "Hello! Thanks for calling. How can I help you today?"
 
-        logger.info(f"[STARTUP] 🗣️ Saying greeting: {greeting}")
+        logger.info(f"[STARTUP] \U0001f5e3\ufe0f Saying greeting: {greeting}")
         await session.say(greeting, allow_interruptions=True)
 
 
@@ -741,10 +824,7 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"[DB] Call session error: {e}")
         
-        # 🛡️ RELEASE ROOM GUARD — Allow future calls to this room
-        if room_name:
-            await RoomGuard.release(room_name, worker_id)
-            logger.info(f"[GUARD] ✓ Room {room_name} released by {worker_id}")
+        # Room guard release is handled by the try/finally in entrypoint(), no duplicate needed here.
 
     ctx.add_shutdown_callback(_on_shutdown)
     

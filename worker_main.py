@@ -60,6 +60,17 @@ from livekit import agents
 from livekit.agents import AgentServer, JobContext, JobProcess
 from livekit.plugins import silero
 
+# Pre-register Azure plugin on the main thread BEFORE any child processes spawn.
+# LiveKit requires plugins to be registered on the main thread; doing it here
+# (at module level) satisfies that requirement.
+try:
+    from livekit.plugins import azure as _azure_plugin  # noqa: F401
+    logging.getLogger("snappy_agent").info("[INIT] ✓ Azure plugin registered on main thread")
+except ImportError:
+    logging.getLogger("snappy_agent").warning(
+        "[INIT] ⚠ livekit-plugins-azure not installed (Urdu TTS unavailable)"
+    )
+
 # Local imports
 from config import (
     logger,
@@ -104,6 +115,10 @@ def prewarm(proc: JobProcess):
     - Load models (VAD, etc.)
     - Verify external service connections
     - Log startup diagnostics
+    
+    NOTE: Plugin registration (e.g. Azure) is done at module level,
+    not here, because prewarm runs in child processes and LiveKit
+    requires plugins to be registered on the main thread.
     """
     logger.info(f"[PREWARM] Worker identity: {LIVEKIT_AGENT_NAME}")
     

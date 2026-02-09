@@ -200,7 +200,7 @@ class AssistantTools(_FunctionContextBase):
     - 'Send me a text instead'
     - 'Can you send an SMS?'
     """)
-    def set_sms_preference(self, prefers_sms: bool = True) -> str:
+    async def set_sms_preference(self, prefers_sms: bool = True) -> str:
         """Note user preference for SMS instead of WhatsApp."""
         state = self.state
         state.prefers_sms = prefers_sms

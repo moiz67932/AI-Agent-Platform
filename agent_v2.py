@@ -251,6 +251,10 @@ from utils.phone_utils import speakable_phone, format_phone_for_speech
 
 from utils.call_logger import CallLogger, create_call_logger
 
+# Pipeline module — switches between English and Urdu at runtime
+from pipelines.pipeline_config import get_pipeline_components
+from pipelines.urdu_prompt import URDU_SYSTEM_PROMPT
+
 from services.calendar_client import (
     CalendarAuth, 
     is_time_free, 
@@ -4051,13 +4055,23 @@ async def entrypoint(ctx: JobContext):
         """
         Generate fresh system prompt with current PatientState snapshot.
         This is the key to Dynamic Slot-Aware Prompting!
+        
+        Automatically selects English (A_TIER_PROMPT) or Urdu (URDU_SYSTEM_PROMPT)
+        based on the ACTIVE_PIPELINE config flag.
         """
         # Get current time in clinic timezone for hallucination prevention
         now = datetime.now(ZoneInfo(clinic_tz))
         current_date_str = now.strftime("%A, %B %d, %Y")
         current_time_str = now.strftime("%I:%M %p")
 
-        return A_TIER_PROMPT.format(
+        # Select prompt template based on active pipeline
+        _active_pl = os.getenv("ACTIVE_PIPELINE", "english").strip().lower()
+        if _active_pl == "urdu":
+            prompt_template = URDU_SYSTEM_PROMPT
+        else:
+            prompt_template = A_TIER_PROMPT
+
+        return prompt_template.format(
             agent_name=agent_name,
             clinic_name=clinic_name,
             timezone=clinic_tz,
@@ -4120,50 +4134,56 @@ async def entrypoint(ctx: JobContext):
     # Phone confirmation should only happen when contact details are explicitly needed.
     # The phone is captured from SIP but will be confirmed later in the flow.
     
-    if settings and settings.get("greeting_text"):
-        greeting = settings.get("greeting_text")
-        logger.info(f"[GREETING] Using DB greeting: {greeting[:50]}...")
-    elif clinic_info:
-        greeting = f"Hi, thanks for calling {clinic_name}! How can I help you today?"
-        logger.info(f"[GREETING] Using clinic-aware greeting for {clinic_name}")
-    else:
-        greeting = "Hello! Thanks for calling. How can I help you today?"
-        logger.info("[GREETING] Using default greeting (DB context not loaded)")
+    # Detect active pipeline from config
+    _active_pipeline = os.getenv("ACTIVE_PIPELINE", "english").strip().lower()
+    _is_urdu = (_active_pipeline == "urdu")
     
-    # ⚡ HIGH-PERFORMANCE LLM with function calling
-    llm_instance = openai_plugin.LLM(
-        model="gpt-4o-mini",
-        temperature=0.7,
+    if _is_urdu:
+        # Urdu greeting
+        if settings and settings.get("greeting_text_urdu"):
+            greeting = settings.get("greeting_text_urdu")
+            logger.info(f"[GREETING-UR] Using DB Urdu greeting: {greeting[:50]}...")
+        elif clinic_info:
+            greeting = f"السلام علیکم! {clinic_name} میں کال کرنے کا شکریہ۔ میں آپ کی کیا مدد کر سکتی ہوں؟"
+            logger.info(f"[GREETING-UR] Using clinic-aware Urdu greeting for {clinic_name}")
+        else:
+            greeting = "السلام علیکم! کال کرنے کا شکریہ۔ میں آپ کی کیا مدد کر سکتی ہوں؟"
+            logger.info("[GREETING-UR] Using default Urdu greeting")
+    else:
+        # English greeting (ORIGINAL — UNCHANGED)
+        if settings and settings.get("greeting_text"):
+            greeting = settings.get("greeting_text")
+            logger.info(f"[GREETING] Using DB greeting: {greeting[:50]}...")
+        elif clinic_info:
+            greeting = f"Hi, thanks for calling {clinic_name}! How can I help you today?"
+            logger.info(f"[GREETING] Using clinic-aware greeting for {clinic_name}")
+        else:
+            greeting = "Hello! Thanks for calling. How can I help you today?"
+            logger.info("[GREETING] Using default greeting (DB context not loaded)")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔀 PIPELINE ROUTER — Select STT, LLM, TTS based on ACTIVE_PIPELINE
+    # ═══════════════════════════════════════════════════════════════════════════
+    # English pipeline code is NOT deleted — it lives in build_english_pipeline().
+    # When ACTIVE_PIPELINE="english", the exact same Deepgram+GPT+Cartesia stack runs.
+    # When ACTIVE_PIPELINE="urdu", Deepgram(ur)+GPT(Urdu prompt)+Azure TTS runs.
+    
+    pipeline_components = get_pipeline_components(
+        active_pipeline=_active_pipeline,
+        agent_lang=agent_lang,
+        stt_aggressive=STT_AGGRESSIVE_ENDPOINTING,
+        latency_debug=LATENCY_DEBUG,
     )
     
-    # ⚡ SNAPPY STT with aggressive endpointing for faster turn detection
-    if os.getenv("DEEPGRAM_API_KEY"):
-        # Deepgram with optimized settings for low-latency
-        stt_config = {
-            "model": "nova-2-general",
-            "language": agent_lang,
-        }
-        # Enable aggressive endpointing if configured AND provider supports it
-        # Guard: Only apply if deepgram_plugin.STT accepts these kwargs
-        if STT_AGGRESSIVE_ENDPOINTING:
-            # Check if STT class accepts endpointing params (capability guard)
-            import inspect
-            try:
-                stt_sig = inspect.signature(deepgram_plugin.STT.__init__)
-                stt_params = set(stt_sig.parameters.keys())
-                # Only add if supported by this version of the plugin
-                if "endpointing" in stt_params or "kwargs" in str(stt_sig):
-                    stt_config["endpointing"] = 300  # 300ms silence triggers end
-                    stt_config["utterance_end_ms"] = 1000  # Max wait for utterance end
-                    if LATENCY_DEBUG:
-                        logger.debug("[STT] Deepgram aggressive endpointing enabled: 300ms")
-            except Exception:
-                pass  # Silently fall back to default if introspection fails
-        stt_instance = deepgram_plugin.STT(**stt_config)
-    else:
-        stt_instance = openai_plugin.STT(model="gpt-4o-transcribe", language="en")
+    stt_instance = pipeline_components["stt"]
+    llm_instance = pipeline_components["llm"]
+    tts_instance = pipeline_components["tts"]
+    _pipeline_filler_phrases = pipeline_components["filler_phrases"]
+    _pipeline_name = pipeline_components["pipeline_name"]
     
-    # ⚡ FAST VAD with tuned silence detection
+    logger.info(f"[PIPELINE] ✓ Active pipeline: {_pipeline_name}")
+    
+    # ⚡ FAST VAD with tuned silence detection (shared by both pipelines)
     # WARNING: min_silence < 0.25s may cause premature cutoffs; min_speech should stay at 0.1
     vad_instance = silero.VAD.load(
         min_speech_duration=VAD_MIN_SPEECH_DURATION,  # 0.1s - don't lower this
@@ -4171,15 +4191,6 @@ async def entrypoint(ctx: JobContext):
     )
     if LATENCY_DEBUG:
         logger.info(f"[VAD] Loaded with min_silence={VAD_MIN_SILENCE_DURATION}s, min_speech={VAD_MIN_SPEECH_DURATION}s")
-    
-    # TTS
-    if os.getenv("CARTESIA_API_KEY"):
-        tts_instance = cartesia_plugin.TTS(
-            model="sonic-3",
-            voice=os.getenv("CARTESIA_VOICE_ID", "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
-        )
-    else:
-        tts_instance = openai_plugin.TTS(model="tts-1", voice="alloy")
 
     # Initialize AgentSession for 1.3.11 compatibility
     
@@ -4446,8 +4457,9 @@ async def entrypoint(ctx: JobContext):
             return
             
         # Select a short filler phrase (< 400ms spoken duration)
+        # Uses pipeline-aware filler phrases (English or Urdu)
         import random
-        filler = random.choice(FILLER_PHRASES)
+        filler = random.choice(_pipeline_filler_phrases)
 
         state.filler_active = True
         state.filler_turn_id = str(current_turn)
@@ -4486,7 +4498,7 @@ async def entrypoint(ctx: JobContext):
         is_filler = active_filler_handle.get("is_filler", False)
         
         # Interrupt if: we have a handle AND (not a filler OR speech doesn't start with filler prefix)
-        is_filler_text = speech_text and any(speech_text.strip().startswith(f) for f in FILLER_PHRASES)
+        is_filler_text = speech_text and any(speech_text.strip().startswith(f) for f in _pipeline_filler_phrases)
         if handle and not is_filler_text:
             _interrupt_filler()
         
@@ -4823,9 +4835,15 @@ async def entrypoint(ctx: JobContext):
             refresh_agent_memory()
 
             # Send proper greeting now that we have context (only if we didn't have it before)
-            followup = (settings or {}).get("greeting_text") or (
-                f"Hi, I'm {agent_name} from {clinic_name}. How can I help you today?"
-            )
+            # Use pipeline-aware greeting (Urdu or English)
+            if _is_urdu:
+                followup = (settings or {}).get("greeting_text_urdu") or (
+                    f"السلام علیکم! میں {agent_name} ہوں، {clinic_name} سے۔ میں آپ کی کیا مدد کر سکتی ہوں؟"
+                )
+            else:
+                followup = (settings or {}).get("greeting_text") or (
+                    f"Hi, I'm {agent_name} from {clinic_name}. How can I help you today?"
+                )
             if followup:
                 asyncio.create_task(session.say(followup))
 
