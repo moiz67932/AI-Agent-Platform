@@ -126,3 +126,7 @@ Thumbs.db
 # ✓ requirements.txt     - Dependencies
 # ✓ Dockerfile           - Container config
 # ✓ .gitignore           - This file
+
+.mcp.json
+.calude
+.agents
