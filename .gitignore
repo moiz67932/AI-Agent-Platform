@@ -128,5 +128,5 @@ Thumbs.db
 # ✓ .gitignore           - This file
 
 .mcp.json
-.calude
+.claude
 .agents
