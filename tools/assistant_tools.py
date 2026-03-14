@@ -46,7 +46,7 @@ from services.appointment_management_service import (
     cancel_appointment,
     reschedule_appointment,
 )
-from services.extraction_service import _iso, extract_reason_quick
+from services.extraction_service import _iso, extract_name_quick, extract_reason_quick
 from utils.contact_utils import parse_datetime_natural
 
 
@@ -537,6 +537,22 @@ class AssistantTools:
         email = _sanitize_tool_arg(email)
         reason = _sanitize_tool_arg(reason)
         time_suggestion = _sanitize_tool_arg(time_suggestion)
+
+        spoken_name = normalize_patient_name(extract_name_quick(state.last_user_text or ""))
+
+        if (
+            name
+            and state.full_name
+            and name.strip().lower() != state.full_name.strip().lower()
+            and (not spoken_name or spoken_name.strip().lower() != name.strip().lower())
+        ):
+            logger.warning(
+                "[TOOL] Ignoring unsupported name overwrite: current=%s incoming=%s last_user_text=%r",
+                state.full_name,
+                name,
+                state.last_user_text,
+            )
+            name = None
 
         if name and state.full_name and name.strip().lower() == state.full_name.strip().lower():
             name = None
