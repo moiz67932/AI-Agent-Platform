@@ -185,6 +185,10 @@ def _time_reask_text(state: PatientState, *, date_hint: Optional[str] = None) ->
     return "I didn't catch that time. What time works best for you?"
 
 
+def _requested_date_context(parsed: datetime) -> str:
+    return parsed.strftime("%A, %B %d")
+
+
 def _is_useful_time_parse_result(result: Dict[str, Any]) -> bool:
     return bool(
         result.get("datetime") is not None
@@ -1230,6 +1234,7 @@ class AssistantTools:
             previous_dt_local = state.dt_local
             known_date_text = _date_hint_for_prompt(state, fallback_text=previous_dt_text)
             cleaned_suggestion = " ".join(time_suggestion.split()).strip()
+            prior_time_status = state.time_status
             state.time_status = "validating"
             logger.info(f"[TOOL] Checking time: {time_suggestion}")
 
@@ -1255,6 +1260,15 @@ class AssistantTools:
 
                 result = parse_datetime_natural(parse_input, tz_hint=BOOKING_TZ)
                 recent_context = state.recent_user_context() if hasattr(state, "recent_user_context") else ""
+                if prior_time_status == "invalid" and (
+                    has_date
+                    or (
+                        not has_date
+                        and has_time
+                        and bool(known_date_text or previous_dt_text)
+                    )
+                ):
+                    recent_context = ""
                 parse_candidates = build_time_parse_candidates(
                     cleaned_suggestion,
                     recent_context=recent_context,
@@ -1350,6 +1364,7 @@ class AssistantTools:
                             state.add_rejected_slot(parsed, reason="slot_taken")
                             state.dt_local = None
                             state.slot_available = False
+                            state.dt_text = _requested_date_context(parsed)
 
                             alternatives = await suggest_slots_around(
                                 clinic_id=clinic_id,
@@ -1405,6 +1420,7 @@ class AssistantTools:
                     state.time_status = "invalid"
                     state.time_error = error_msg
                     state.dt_local = None
+                    state.dt_text = _requested_date_context(parsed)
                     clinic_id = str((self._clinic_info or {}).get("id") or "")
                     start_date = parsed.date() if parsed else datetime.now(ZoneInfo(BOOKING_TZ)).date()
                     alternatives = await get_next_available_slots(

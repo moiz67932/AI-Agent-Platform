@@ -701,6 +701,12 @@ def _infer_expected_slot_from_response(
         return ExpectedUserSlot.TIME
 
     if (
+        (("which service" in normalized) or ("what service" in normalized))
+        and "book" in normalized
+    ):
+        return ExpectedUserSlot.SERVICE
+
+    if (
         "can i use the number you're calling from" in normalized
         or "is this the right number to send your confirmation to" in normalized
         or bool(state and (state.pending_confirm == "phone" or state.pending_confirm_field == "phone"))
@@ -712,6 +718,24 @@ def _infer_expected_slot_from_response(
     if "what day would you like" in normalized or "could you specify the day" in normalized:
         return ExpectedUserSlot.DATE
     if "what day and time would you like" in normalized:
+        return ExpectedUserSlot.DATE_TIME
+
+    alternative_slot_prompt = (
+        "would you like one of those" in normalized
+        or "would either of those work" in normalized
+        or "would that work" in normalized
+        or (
+            has_time_reference(normalized)
+            and (
+                "the closest i have is" in normalized
+                or "i can do " in normalized
+                or " i have " in normalized
+            )
+        )
+    )
+    if alternative_slot_prompt and state and state.time_status == "invalid":
+        if state.dt_text and has_date_reference(state.dt_text) and not has_time_reference(state.dt_text):
+            return ExpectedUserSlot.TIME
         return ExpectedUserSlot.DATE_TIME
 
     if route == "booking.capture_date":
@@ -750,11 +774,11 @@ def _build_post_phone_confirmation_prompt(state: PatientState) -> str:
 
 
 def _final_closing_text() -> str:
-    return "Wonderful. You're all set — we'll see you then. Have a great day."
+    return "Bye, you're all set. We'll see you then. Have a great day."
 
 
 def _non_booking_closing_text() -> str:
-    return "Thanks for calling. Have a great day."
+    return "Bye, thanks for calling. Have a great day."
 
 
 def _closing_text_for_state(state: PatientState) -> str:
@@ -822,7 +846,10 @@ async def _handle_exit_intent_turn(
     if mark_direct_response is not None:
         mark_direct_response()
 
-    final_handle = resolved_safe_say(_closing_text_for_state(state))
+    final_handle = resolved_safe_say(
+        _closing_text_for_state(state),
+        allow_interruptions=False,
+    )
     if schedule_auto_disconnect is not None:
         schedule_auto_disconnect(final_handle)
     return "consumed"
@@ -1071,7 +1098,10 @@ async def _handle_post_booking_turn(
             logger.info("closing_state_entered")
             if mark_direct_response is not None:
                 mark_direct_response()
-            final_handle = resolved_safe_say(_final_closing_text())
+            final_handle = resolved_safe_say(
+                _final_closing_text(),
+                allow_interruptions=False,
+            )
             state.final_goodbye_sent = True
             state.closing_state = "final_goodbye_sent"
             logger.info("final_goodbye_sent")

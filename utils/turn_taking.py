@@ -668,9 +668,37 @@ class StreamingTurnTracker:
                     snap.deterministic_next_step = "booking.capture_time"
                 elif snap.expected_slot_status == "unsatisfied":
                     return
+            elif expected_slot == ExpectedUserSlot.SERVICE:
+                if snap.expected_slot_status == "satisfied":
+                    snap.actionable = True
+                    if not has_date and not has_time:
+                        snap.deterministic_next_step = "booking.ask_date_time"
+                        snap.deterministic_response = _with_optional_ack(
+                            f"What day and time would you like for your {_service_phrase(known_service)}?",
+                            name=known_name,
+                            filler_spoken=snap.filler_spoken_for_turn,
+                        )
+                    elif has_date and not has_time:
+                        snap.deterministic_next_step = "booking.ask_time"
+                        snap.deterministic_response = _with_optional_ack(
+                            f"What time works best for your {_service_phrase(known_service)}?",
+                            name=known_name,
+                            filler_spoken=snap.filler_spoken_for_turn,
+                        )
+                    elif has_time and not has_date:
+                        snap.deterministic_next_step = "booking.ask_date"
+                        snap.deterministic_response = _with_optional_ack(
+                            f"What day would you like for your {_service_phrase(known_service)}?",
+                            name=known_name,
+                            filler_spoken=snap.filler_spoken_for_turn,
+                        )
+                    else:
+                        snap.deterministic_next_step = "booking.route_existing_flow"
+                elif snap.expected_slot_status == "unsatisfied":
+                    return
 
         if (
-            snap.deterministic_next_step not in capture_routes
+            snap.deterministic_next_step is None
             and snap.intent == "booking"
             and snap.intent_confidence >= self.config.low_confidence_threshold
         ):
@@ -706,7 +734,11 @@ class StreamingTurnTracker:
             else:
                 snap.deterministic_next_step = "booking.route_existing_flow"
 
-        elif snap.intent in {"reschedule", "cancellation"} and snap.intent_confidence >= self.config.low_confidence_threshold:
+        elif (
+            snap.deterministic_next_step is None
+            and snap.intent in {"reschedule", "cancellation"}
+            and snap.intent_confidence >= self.config.low_confidence_threshold
+        ):
             snap.actionable = True
             if not phone_known and not known_name:
                 snap.deterministic_next_step = f"{snap.intent}.ask_identifier"
@@ -725,7 +757,11 @@ class StreamingTurnTracker:
             else:
                 snap.deterministic_next_step = f"{snap.intent}.lookup_existing"
 
-        elif snap.intent == "appointment_lookup" and snap.intent_confidence >= self.config.low_confidence_threshold:
+        elif (
+            snap.deterministic_next_step is None
+            and snap.intent == "appointment_lookup"
+            and snap.intent_confidence >= self.config.low_confidence_threshold
+        ):
             snap.actionable = True
             if phone_known:
                 snap.deterministic_next_step = "appointment.lookup_existing"
@@ -737,11 +773,19 @@ class StreamingTurnTracker:
                     filler_spoken=snap.filler_spoken_for_turn,
                 )
 
-        elif snap.intent == "clinic_info" and snap.intent_confidence >= self.config.low_confidence_threshold:
+        elif (
+            snap.deterministic_next_step is None
+            and snap.intent == "clinic_info"
+            and snap.intent_confidence >= self.config.low_confidence_threshold
+        ):
             snap.actionable = True
             snap.deterministic_next_step = "clinic_info.answer"
 
-        elif snap.intent == "general_issue" and snap.intent_confidence >= self.config.low_confidence_threshold:
+        elif (
+            snap.deterministic_next_step is None
+            and snap.intent == "general_issue"
+            and snap.intent_confidence >= self.config.low_confidence_threshold
+        ):
             snap.actionable = True
             snap.deterministic_next_step = "general_issue.ask_clarification"
             snap.deterministic_response = _with_optional_ack(
