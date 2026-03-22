@@ -1,0 +1,19 @@
+import { Badge } from './badge';
+
+const statusConfig = {
+  live: { label: 'Live', variant: 'success' as const },
+  paused: { label: 'Paused', variant: 'warning' as const },
+  draft: { label: 'Draft', variant: 'secondary' as const },
+  active: { label: 'Active', variant: 'success' as const },
+  inactive: { label: 'Inactive', variant: 'secondary' as const },
+  error: { label: 'Error', variant: 'destructive' as const },
+};
+
+interface StatusBadgeProps {
+  status: keyof typeof statusConfig;
+}
+
+export function StatusBadge({ status }: StatusBadgeProps) {
+  const config = statusConfig[status] || statusConfig.draft;
+  return <Badge variant={config.variant}>{config.label}</Badge>;
+}

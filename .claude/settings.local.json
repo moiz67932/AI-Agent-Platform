@@ -5,7 +5,12 @@
       "Bash(.venv/Scripts/python.exe -m unittest tests.test_agent_flow tests.test_agent_runtime_config -v)",
       "mcp__supabase__list_tables",
       "Bash(/tmp/compare_prompts.txt:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(wc -l c:/Users/Moiz/Desktop/Agent/Agent/platform/frontend/src/pages/*.tsx)",
+      "Bash(npm install:*)",
+      "Bash(node_modules/.bin/tsc -p frontend/tsconfig.json --noEmit)"
     ]
   },
   "enableAllProjectMcpServers": true,

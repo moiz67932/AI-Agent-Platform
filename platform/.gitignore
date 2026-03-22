@@ -1,0 +1,23 @@
+# Root-level node_modules (workspace installs)
+node_modules/
+
+# Environment files (any level)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Build outputs
+dist/
