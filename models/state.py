@@ -128,6 +128,7 @@ class PatientState:
     calendar_event_id: Optional[str] = None
 
     # Appointment management (cancel/reschedule flow)
+    appointment_action: Optional[str] = None  # 'cancelling' | 'rescheduling' | None
     found_appointment_id: Optional[str] = None
     found_appointment_details: Optional[Dict[str, Any]] = None
 

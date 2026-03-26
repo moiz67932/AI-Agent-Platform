@@ -17,6 +17,7 @@ import traceback
 from typing import Optional, Dict, Any, Tuple, List, cast
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
+from utils.supabase_retry import supabase_write_with_retry
 
 from config import (
     supabase,
@@ -454,10 +455,17 @@ async def book_to_supabase(
         logger.info(f"[DB] appointment_source={appointment_source}")
         logger.debug(f"[DB] Insert payload: {json.dumps(debug_payload, indent=2)}")
         logger.info(f"[DB] Inserting appointment (timeout={BOOKING_DB_TIMEOUT_SEC}s) start={payload['start_time']}")
-        
-        # Execute with hard timeout
-        appt_id = await asyncio.wait_for(asyncio.to_thread(_insert_sync), timeout=BOOKING_DB_TIMEOUT_SEC)
 
+        # Execute with retry logic (supabase_write_with_retry wraps asyncio.to_thread internally)
+        success, result = await supabase_write_with_retry(
+            _insert_sync,
+            table_name="appointments",
+        )
+        if not success:
+            logger.error(f"[DB] ❌ Appointment insert permanently failed: {result!r}")
+            return None
+
+        appt_id = result  # _insert_sync returns the str id directly
         if not appt_id:
             logger.error("[DB] Insert returned no id (unexpected)")
             return None

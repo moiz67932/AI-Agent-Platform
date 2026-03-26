@@ -20,6 +20,21 @@ from supabase import create_client
 load_dotenv(".env.local")
 
 # =============================================================================
+# SENTRY INITIALIZATION
+# =============================================================================
+
+import sentry_sdk
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    environment=os.getenv("ENVIRONMENT", "development"),
+    release=os.getenv("VERSION", "unknown"),
+    integrations=[AsyncioIntegration()],
+    traces_sample_rate=0.1,
+)
+
+# =============================================================================
 # 🚀 LATENCY OPTIMIZATION CONSTANTS — TUNING KNOBS FOR SNAPPY RESPONSES
 # =============================================================================
 """

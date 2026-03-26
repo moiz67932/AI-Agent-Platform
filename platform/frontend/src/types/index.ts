@@ -125,6 +125,7 @@ export interface CallSession {
   agent_id: string;
   phone_number_id?: string;
   caller_number?: string;
+  caller_name?: string;
   outcome: 'booked' | 'info_only' | 'missed' | 'transferred' | 'voicemail' | 'error';
   duration_seconds: number;
   started_at: string;

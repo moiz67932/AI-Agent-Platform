@@ -13,6 +13,7 @@ from .phone_utils import (
 )
 from .formatting_utils import build_spoken_confirmation, email_for_speech
 from .call_logger import CallLogger, create_call_logger
+from .supabase_retry import supabase_write_with_retry
 
 __all__ = [
     "TTLCache",
@@ -28,4 +29,5 @@ __all__ = [
     "email_for_speech",
     "CallLogger",
     "create_call_logger",
+    "supabase_write_with_retry",
 ]

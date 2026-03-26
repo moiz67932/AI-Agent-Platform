@@ -33,6 +33,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppointments, useCreateAppointment } from '@/hooks/useAppointments';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
+import { useAuthStore } from '@/stores/authStore';
 import type { Appointment } from '@/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -371,6 +373,9 @@ function CalendarDay({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
+  const { user } = useAuthStore();
+  useRealtimeSync(user?.organization_id ?? null);
+
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
   const [dayModalData, setDayModalData] = useState<{ date: Date; appts: Appointment[] } | null>(null);

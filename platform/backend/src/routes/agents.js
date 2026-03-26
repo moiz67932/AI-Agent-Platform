@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
+import { requireRole } from '../middleware/requireRole.js';
+import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 
 const router = Router();
 
@@ -44,7 +46,7 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // POST /api/agents
-router.post('/', async (req, res, next) => {
+router.post('/', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from('agents')
@@ -58,7 +60,7 @@ router.post('/', async (req, res, next) => {
 });
 
 // PUT /api/agents/:id
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { settings, ...agentData } = req.body;
 
@@ -106,8 +108,62 @@ router.patch('/:id/status', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/agents/:id/test-call
+router.post('/:id/test-call', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Verify agent belongs to this org and load clinic_id
+    const { data: agent, error: agentErr } = await supabase
+      .from('agents')
+      .select('id, clinic_id, status')
+      .eq('id', id)
+      .eq('organization_id', req.orgId)
+      .single();
+
+    if (agentErr || !agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const agentName = process.env.LIVEKIT_AGENT_NAME || 'voice-agent';
+
+    if (!livekitUrl || !apiKey || !apiSecret) {
+      return res.status(503).json({ error: 'LiveKit is not configured on this server' });
+    }
+
+    const roomName = `test-${id.slice(0, 8)}-${Date.now()}`;
+    const identity = `user-${req.user.id.slice(0, 8)}`;
+
+    // Build browser access token
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity,
+      ttl: '10m',
+    });
+    at.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+    });
+    const token = await at.toJwt();
+
+    // Dispatch the agent to the room
+    const dispatchClient = new AgentDispatchClient(livekitUrl, { apiKey, apiSecret });
+    await dispatchClient.createDispatch(roomName, agentName, {
+      metadata: JSON.stringify({
+        clinic_id: agent.clinic_id,
+        agent_id: agent.id,
+        test_mode: true,
+      }),
+    });
+
+    res.json({ roomName, token, livekitUrl });
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/agents/:id
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireRole('owner'), async (req, res, next) => {
   try {
     const { error } = await supabase
       .from('agents')

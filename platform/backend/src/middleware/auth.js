@@ -20,15 +20,43 @@ export async function authMiddleware(req, res, next) {
 
     req.user = user;
 
-    // Attach organization
+    // First: try owner lookup
     const { data: orgs } = await supabase
       .from('organizations')
       .select('id, name')
       .eq('owner_id', user.id)
       .limit(1);
 
-    req.org = orgs?.[0] || null;
-    req.orgId = req.org?.id || null;
+    if (orgs?.[0]) {
+      req.org = orgs[0];
+      req.orgId = orgs[0].id;
+      req.userRole = 'owner';
+      return next();
+    }
+
+    // Second: check if user is a team member
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('organization_id, role')
+      .eq('user_id', user.id)
+      .not('joined_at', 'is', null)
+      .limit(1);
+
+    if (membership?.[0]) {
+      const { data: memberOrgs } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .eq('id', membership[0].organization_id)
+        .limit(1);
+
+      req.org = memberOrgs?.[0] || null;
+      req.orgId = req.org?.id || null;
+      req.userRole = membership[0].role;
+    } else {
+      req.org = null;
+      req.orgId = null;
+      req.userRole = null;
+    }
 
     next();
   } catch (err) {

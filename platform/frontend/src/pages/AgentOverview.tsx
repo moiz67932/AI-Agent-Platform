@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Bot, Phone, Settings, BookOpen, PhoneCall, Power, Pencil, ExternalLink } from 'lucide-react';
+import { TestCallModal } from '@/components/TestCallModal';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -187,6 +188,7 @@ export default function AgentOverview() {
   const navigate = useNavigate();
   const { data: agent, isLoading } = useAgent(id!);
   const toggleStatus = useToggleAgentStatus();
+  const [showTestCall, setShowTestCall] = useState(false);
 
   if (isLoading) {
     return (
@@ -253,6 +255,11 @@ export default function AgentOverview() {
                 })}
               />
             </div>
+            {agent.status === 'live' && (
+              <Button variant="outline" size="sm" onClick={() => setShowTestCall(true)}>
+                <Phone className="h-4 w-4 mr-2" />Test Call
+              </Button>
+            )}
             <Button variant="outline" size="sm" asChild>
               <Link to={`/knowledge/${agent.clinic_id}`}>
                 <BookOpen className="h-4 w-4 mr-2" />Knowledge
@@ -310,6 +317,13 @@ export default function AgentOverview() {
           <SettingsTab agent={agent} />
         </TabsContent>
       </Tabs>
+
+      <TestCallModal
+        agentId={agent.id}
+        agentName={agent.name}
+        isOpen={showTestCall}
+        onClose={() => setShowTestCall(false)}
+      />
     </div>
   );
 }

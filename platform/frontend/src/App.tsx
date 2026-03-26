@@ -28,6 +28,7 @@ import AccountSettings from '@/pages/settings/Account';
 import TeamSettings from '@/pages/settings/Team';
 import BillingSettings from '@/pages/settings/Billing';
 import ApiKeysSettings from '@/pages/settings/ApiKeys';
+import AcceptInvite from '@/pages/AcceptInvite';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -89,6 +90,9 @@ function AppRoutes() {
 
         {/* OAuth callback — Supabase redirects here after Google sign-in */}
         <Route path="/auth/callback" element={<OAuthCallback />} />
+
+        {/* Team invite accept — public, no auth required */}
+        <Route path="/accept-invite" element={<AcceptInvite />} />
 
         {/* Onboarding (protected, no sidebar) */}
         <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />

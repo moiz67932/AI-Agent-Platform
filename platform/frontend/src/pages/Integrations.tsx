@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, XCircle, ExternalLink, Settings, Webhook, Database, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { api } from '@/lib/api';
 
 interface Integration {
   id: string;
@@ -16,14 +17,13 @@ interface Integration {
   description: string;
   status: 'connected' | 'disconnected' | 'core';
   icon: React.ReactNode;
-  comingSoon?: boolean;
 }
 
 const INTEGRATIONS: Integration[] = [
   {
-    id: 'telnyx',
-    name: 'Telnyx',
-    description: 'Phone number provisioning and SIP infrastructure',
+    id: 'twilio',
+    name: 'Twilio',
+    description: 'Phone number provisioning and SIP Trunk infrastructure',
     status: 'connected',
     icon: <Phone className="h-5 w-5" />,
   },
@@ -44,43 +44,66 @@ const INTEGRATIONS: Integration[] = [
 ];
 
 const COMING_SOON = [
-  'Google Calendar', 'Calendly', 'Twilio', 'Zapier', 'Slack', 'HubSpot CRM', 'Stripe', 'Outlook',
+  'Google Calendar', 'Calendly', 'Zapier', 'Slack', 'HubSpot CRM', 'Stripe', 'Outlook', 'Salesforce',
 ];
 
-function TelnyxConfig({ onClose }: { onClose: () => void }) {
-  const [apiKey, setApiKey] = useState('');
+function TwilioConfig({ onClose }: { onClose: () => void }) {
+  const [accountSid, setAccountSid] = useState('');
+  const [authToken, setAuthToken] = useState('');
   const [testing, setTesting] = useState(false);
-  const [tested, setTested] = useState(false);
 
   const test = async () => {
+    if (!accountSid || !authToken) return;
     setTesting(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    setTested(true);
-    setTesting(false);
-    toast({ title: 'Telnyx connection successful', variant: 'default' });
+    try {
+      await api.post('/api/integrations/twilio/test', {
+        account_sid: accountSid,
+        auth_token: authToken,
+      });
+      toast({ title: 'Twilio connection successful' });
+    } catch {
+      toast({ title: 'Twilio connection failed', variant: 'destructive' });
+    } finally {
+      setTesting(false);
+    }
   };
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Configure Telnyx</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Configure Twilio</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>API Key</Label>
+            <Label>Account SID</Label>
             <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="KEY0..."
+              value={accountSid}
+              onChange={(e) => setAccountSid(e.target.value)}
+              placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>SIP Connection ID</Label>
-            <Input placeholder="43a1b2..." />
+            <Label>Auth Token</Label>
+            <Input
+              type="password"
+              value={authToken}
+              onChange={(e) => setAuthToken(e.target.value)}
+              placeholder="your_auth_token"
+            />
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+            Find your credentials in the{' '}
+            <a
+              href="https://console.twilio.com"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary hover:underline inline-flex items-center gap-0.5"
+            >
+              Twilio console <ExternalLink className="h-3 w-3" />
+            </a>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={test} disabled={testing || !apiKey}>
+          <Button variant="outline" onClick={test} disabled={testing || !accountSid || !authToken}>
             {testing ? 'Testing...' : 'Test Connection'}
           </Button>
           <Button onClick={onClose}>Save</Button>
@@ -256,7 +279,7 @@ export default function Integrations() {
         </Card>
       </div>
 
-      {configuring === 'telnyx' && <TelnyxConfig onClose={() => setConfiguring(null)} />}
+      {configuring === 'twilio' && <TwilioConfig onClose={() => setConfiguring(null)} />}
       {configuring === 'webhooks' && <WebhookConfig onClose={() => setConfiguring(null)} />}
     </div>
   );

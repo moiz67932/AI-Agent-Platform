@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Upload, LinkIcon, Trash2, Pencil, Copy,
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { useKnowledge, useCreateArticle, useUpdateArticle, useDeleteArticle } from '@/hooks/useKnowledge';
 import { relativeTime } from '@/lib/utils';
+import { api } from '@/lib/api';
 import type { KnowledgeArticle } from '@/types';
 
 const CATEGORIES = ['FAQ', 'Services', 'Pricing', 'Policies', 'Hours', 'Location', 'Insurance', 'Pre/Post Care', 'Emergency', 'General'];
@@ -156,29 +158,131 @@ function ArticleRow({ article, clinicId, onEdit }: { article: KnowledgeArticle; 
   );
 }
 
-function ImportSection({ clinicId }: { clinicId: string }) {
-  const createArticle = useCreateArticle();
+type ScrapeStatus = 'idle' | 'pending' | 'processing' | 'done' | 'failed';
+
+function ImportUrlTab({ clinicId }: { clinicId: string }) {
+  const queryClient = useQueryClient();
   const [url, setUrl] = useState('');
-  const [importing, setImporting] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<ScrapeStatus>('idle');
+  const [articlesCreated, setArticlesCreated] = useState(0);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  useEffect(() => () => stopPolling(), []);
+
+  const startPolling = (id: string) => {
+    stopPolling();
+    intervalRef.current = setInterval(async () => {
+      try {
+        const res = await api.get<{ data: { status: string; articles_created: number; error: string | null } }>(
+          `/api/knowledge/${clinicId}/scrape-status/${id}`
+        );
+        const job = res.data;
+        if (job.status === 'done') {
+          stopPolling();
+          setJobStatus('done');
+          setArticlesCreated(job.articles_created);
+          queryClient.invalidateQueries({ queryKey: ['knowledge', clinicId] });
+        } else if (job.status === 'failed') {
+          stopPolling();
+          setJobStatus('failed');
+          setJobError(job.error);
+        } else {
+          setJobStatus(job.status as ScrapeStatus);
+        }
+      } catch {
+        // Keep polling — transient network error
+      }
+    }, 2000);
+  };
 
   const importFromUrl = async () => {
     if (!url) return;
-    setImporting(true);
+    setJobStatus('pending');
+    setJobError(null);
     try {
-      await new Promise((r) => setTimeout(r, 1500));
-      await createArticle.mutateAsync({
-        clinicId,
-        title: 'Imported from ' + url,
-        body: 'Content imported from website. Edit this article to add the actual content.',
-        category: 'General',
-        status: 'draft',
-      });
-    } finally {
-      setImporting(false);
-      setUrl('');
+      const res = await api.post<{ jobId: string }>(`/api/knowledge/${clinicId}/import-url`, { url });
+      setJobId(res.jobId);
+      startPolling(res.jobId);
+    } catch (err: unknown) {
+      setJobStatus('failed');
+      setJobError(err instanceof Error ? err.message : 'Failed to start import');
     }
   };
+
+  const reset = () => {
+    stopPolling();
+    setJobId(null);
+    setJobStatus('idle');
+    setJobError(null);
+    setUrl('');
+  };
+
+  const errorMessage = () => {
+    if (jobError === 'robots_disallowed') return "This website doesn't allow scraping";
+    if (jobError === 'timeout') return 'The page took too long to load';
+    return 'Failed to import. Check the URL and try again.';
+  };
+
+  const isWorking = jobStatus === 'pending' || jobStatus === 'processing';
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">Enter your website URL to import content automatically.</p>
+      <div className="flex gap-2">
+        <Input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://yourclinic.com/faq"
+          disabled={isWorking}
+          onKeyDown={(e) => e.key === 'Enter' && !isWorking && url && importFromUrl()}
+        />
+        <Button onClick={importFromUrl} disabled={!url || isWorking || jobStatus === 'done'}>
+          <LinkIcon className="h-4 w-4 mr-2" />
+          {isWorking ? 'Importing...' : 'Import'}
+        </Button>
+      </div>
+
+      {isWorking && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="h-3 w-3 rounded-full bg-blue-500 animate-pulse" />
+          {jobStatus === 'pending' ? 'Starting scrape...' : 'Scraping page content...'}
+        </div>
+      )}
+
+      {jobStatus === 'done' && (
+        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/20">
+          <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" />
+            Imported {articlesCreated} article{articlesCreated !== 1 ? 's' : ''}
+          </div>
+          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={reset}>Import another</Button>
+        </div>
+      )}
+
+      {jobStatus === 'failed' && (
+        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            {errorMessage()}
+          </div>
+          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={reset}>Try again</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportSection({ clinicId }: { clinicId: string }) {
+  const fileRef = useRef<HTMLInputElement>(null);
 
   return (
     <Tabs defaultValue="file">
@@ -205,19 +309,8 @@ function ImportSection({ clinicId }: { clinicId: string }) {
         </div>
       </TabsContent>
 
-      <TabsContent value="url" className="mt-4 space-y-3">
-        <p className="text-sm text-muted-foreground">Enter your website URL to import content automatically.</p>
-        <div className="flex gap-2">
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://yourclinic.com/faq"
-          />
-          <Button onClick={importFromUrl} disabled={!url || importing}>
-            <LinkIcon className="h-4 w-4 mr-2" />
-            {importing ? 'Importing...' : 'Import'}
-          </Button>
-        </div>
+      <TabsContent value="url" className="mt-4">
+        <ImportUrlTab clinicId={clinicId} />
       </TabsContent>
 
       <TabsContent value="template" className="mt-4">

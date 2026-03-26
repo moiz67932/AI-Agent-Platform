@@ -17,6 +17,7 @@ import { OutcomeBadge } from '@/components/ui/outcome-badge';
 import { useAgents } from '@/hooks/useAgents';
 import { useCalls } from '@/hooks/useCalls';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { useAuthStore } from '@/stores/authStore';
 import { formatDuration, maskPhone, relativeTime } from '@/lib/utils';
 
@@ -72,6 +73,7 @@ function KpiCard({
 
 export default function Dashboard() {
   const { user } = useAuthStore();
+  useRealtimeSync(user?.organization_id ?? null);
   const { data: agents, isLoading: agentsLoading } = useAgents();
   const { data: calls, isLoading: callsLoading } = useCalls({ per_page: 5 });
   const { data: analytics, isLoading: analyticsLoading } = useAnalytics();

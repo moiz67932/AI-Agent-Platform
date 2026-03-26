@@ -22,6 +22,13 @@
     "livekit-docs": {
       "type": "http",
       "url": "https://docs.livekit.io/mcp"
+    },
+     "stitch": {
+      "type": "http",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "AQ.Ab8RN6ITrlMp1Vblv9Db_CKsfekoaeTXYkqNOvHUAxL0tKXAdg"
+      }
     }
   }
 }

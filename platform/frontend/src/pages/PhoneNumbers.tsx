@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Phone, Plus, Loader2, MoreHorizontal, ExternalLink } from 'lucide-react';
+import { Phone, Plus, Loader2, MoreHorizontal, ExternalLink, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -28,44 +28,142 @@ function toE164(raw: string): string {
   return `+${digits}`;
 }
 
+interface AvailableNumber {
+  phoneNumber: string;
+  friendlyName: string;
+  locality?: string;
+  region?: string;
+}
+
 function AddNumberDialog({ onClose }: { onClose: () => void }) {
-  const [number, setNumber] = useState('');
+  const [tab, setTab] = useState<'search' | 'manual'>('search');
+  const [areaCode, setAreaCode] = useState('');
+  const [searchResults, setSearchResults] = useState<AvailableNumber[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState<string>('');
   const [label, setLabel] = useState('');
+  const [manualNumber, setManualNumber] = useState('');
   const provisionNumber = useProvisionNumber();
 
+  const search = async () => {
+    setSearching(true);
+    setSearchResults([]);
+    try {
+      const params = new URLSearchParams({ country: 'US' });
+      if (areaCode.trim()) params.set('area_code', areaCode.trim());
+      const res = await api.get(`/api/numbers/search?${params}`);
+      setSearchResults(res.data.data || []);
+    } catch {
+      toast({ title: 'Search failed', variant: 'destructive' });
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const provision = async () => {
-    const cleaned = number.trim();
-    if (!cleaned) {
-      toast({ title: 'Enter a phone number', variant: 'destructive' });
+    const phoneNumber = tab === 'search' ? selected : toE164(manualNumber.trim());
+    if (!phoneNumber) {
+      toast({ title: 'Select or enter a phone number', variant: 'destructive' });
       return;
     }
-    const e164 = toE164(cleaned);
-    await provisionNumber.mutateAsync({ phone_number: e164, label: label.trim() || undefined });
+    await provisionNumber.mutateAsync({ phone_number: phoneNumber, label: label.trim() || undefined });
     onClose();
   };
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Add Twilio Number</DialogTitle>
           <DialogDescription>
-            Enter a phone number from your Twilio account. Numbers must already be purchased in Twilio and configured to point to your LiveKit SIP trunk.
+            Search for an available number to purchase, or enter one you already own.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Phone Number</Label>
-            <Input
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              placeholder="+1 (212) 555-0100"
-              onKeyDown={(e) => e.key === 'Enter' && provision()}
-            />
-            <p className="text-xs text-muted-foreground">
-              Enter in any format — we'll convert to E.164 (+12125550100)
-            </p>
-          </div>
+
+        {/* Tab switcher */}
+        <div className="flex gap-2 border-b border-border pb-2">
+          <button
+            className={`text-sm px-3 py-1 rounded-md transition-colors ${tab === 'search' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setTab('search')}
+          >
+            Search Available
+          </button>
+          <button
+            className={`text-sm px-3 py-1 rounded-md transition-colors ${tab === 'manual' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setTab('manual')}
+          >
+            Enter Manually
+          </button>
+        </div>
+
+        <div className="space-y-4 py-1">
+          {tab === 'search' ? (
+            <>
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-1">
+                  <Label>Area Code <span className="text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    value={areaCode}
+                    onChange={(e) => setAreaCode(e.target.value)}
+                    placeholder="212"
+                    maxLength={3}
+                    onKeyDown={(e) => e.key === 'Enter' && search()}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button variant="outline" onClick={search} disabled={searching}>
+                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    Search
+                  </Button>
+                </div>
+              </div>
+
+              {searchResults.length > 0 && (
+                <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
+                  {searchResults.map((n) => (
+                    <button
+                      key={n.phoneNumber}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-accent/50 transition-colors flex justify-between items-center ${selected === n.phoneNumber ? 'bg-primary/10' : ''}`}
+                      onClick={() => setSelected(n.phoneNumber)}
+                    >
+                      <span className="font-mono font-medium">{n.friendlyName}</span>
+                      {n.locality && <span className="text-xs text-muted-foreground">{n.locality}, {n.region}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!searching && searchResults.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Search to see available numbers from Twilio
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Phone Number</Label>
+              <Input
+                value={manualNumber}
+                onChange={(e) => setManualNumber(e.target.value)}
+                placeholder="+1 (212) 555-0100"
+                onKeyDown={(e) => e.key === 'Enter' && provision()}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter in any format — we'll convert to E.164 (+12125550100)
+              </p>
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1 mt-2">
+                <p className="font-medium text-foreground">Setup checklist</p>
+                <p>1. Buy a number in your{' '}
+                  <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
+                    Twilio console <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+                <p>2. Configure it to point to your LiveKit SIP Trunk</p>
+                <p>3. Enter the number here to track it in VoiceAI</p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label>Label <span className="text-muted-foreground">(optional)</span></Label>
             <Input
@@ -74,18 +172,13 @@ function AddNumberDialog({ onClose }: { onClose: () => void }) {
               placeholder="Main Line, After Hours, etc."
             />
           </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Setup checklist</p>
-            <p>1. Buy a number in your <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">Twilio console <ExternalLink className="h-3 w-3" /></a></p>
-            <p>2. Configure it to use your LiveKit SIP trunk as the SIP endpoint</p>
-            <p>3. Enter the number here to track it in VoiceAI</p>
-          </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={provision} disabled={provisionNumber.isPending}>
             {provisionNumber.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Add Number
+            {tab === 'search' ? 'Purchase & Add' : 'Add Number'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -147,7 +240,7 @@ export default function PhoneNumbers() {
   const [assignTarget, setAssignTarget] = useState<{ id: string; agentId?: string } | null>(null);
 
   const release = async (id: string) => {
-    if (!confirm('Remove this number from VoiceAI? It will not be deleted from Twilio.')) return;
+    if (!confirm('Remove this number from VoiceAI? It will also be released from your Twilio account.')) return;
     await releaseNumber.mutateAsync(id);
   };
 
@@ -156,7 +249,7 @@ export default function PhoneNumbers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Phone Numbers</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Twilio numbers connected to your LiveKit SIP trunk</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Twilio numbers connected to your LiveKit SIP Trunk</p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-2" />Add Number
@@ -167,11 +260,11 @@ export default function PhoneNumbers() {
       <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground flex items-start gap-3">
         <Phone className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
         <span>
-          Phone numbers are purchased and managed in your{' '}
+          Phone numbers are purchased via{' '}
           <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
-            Twilio console <ExternalLink className="h-3 w-3" />
+            Twilio <ExternalLink className="h-3 w-3" />
           </a>
-          . Add them here to assign them to agents and track call activity.
+          {' '}and routed through your LiveKit SIP Trunk. Add them here to assign them to agents and track call activity.
         </span>
       </div>
 
@@ -232,7 +325,7 @@ export default function PhoneNumbers() {
                               className="text-destructive"
                               onClick={() => release(num.id)}
                             >
-                              Remove Number
+                              Release Number
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

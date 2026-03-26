@@ -35,13 +35,15 @@ import os
 import re
 import json
 import time
+import uuid
 import asyncio
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Callable, Awaitable, Literal
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
+import sentry_sdk
 
 load_dotenv(".env.local")
 
@@ -107,6 +109,7 @@ from pipelines.urdu_prompt import URDU_SYSTEM_PROMPT
 from services.database_service import fetch_clinic_context_optimized
 from services.scheduling_service import load_schedule_from_settings, get_duration_for_service
 from services.extraction_service import extract_name_quick, extract_reason_quick
+from utils.supabase_retry import supabase_write_with_retry
 from utils.turn_taking import (
     CompletionLabel,
     ExpectedUserSlot,
@@ -265,7 +268,7 @@ RULES:
 - Keep every response to 1-2 short sentences. This is a phone call.
 - If you need a tiny bridge while waiting, use only a very short acknowledgement like "Sure." or "Of course." Never pad confirmation or slot-capture turns.
 - Sound warm and natural: "Of course!", "Perfect!", "Got it!" — not robotic.
-- For cancel/reschedule requests: call find_existing_appointment first, confirm details with user, then act.
+- For cancel/reschedule: Say "I can help with that." then IMMEDIATELY call find_existing_appointment. Confirm the appointment details with the caller. For cancel: call cancel_appointment_tool. For reschedule: call reschedule_appointment_tool(new_time). Never ask for name/phone again if already captured.
 - For emergencies (severe pain, bleeding, swelling): express concern, direct to ER, offer follow-up booking.
 - If user corrects information, update it immediately with the tool.
 - After a successful booking and user confirms no more questions, call end_conversation."""
@@ -1156,6 +1159,15 @@ async def _handle_post_booking_turn(
 # =============================================================================
 
 async def entrypoint(ctx: JobContext):
+    """Sentry-wrapped entrypoint — captures exceptions with call context then re-raises."""
+    try:
+        await _entrypoint_impl(ctx)
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        raise
+
+
+async def _entrypoint_impl(ctx: JobContext):
     """
     Clean entrypoint. ~400ms target latency.
 
@@ -1306,10 +1318,20 @@ async def entrypoint(ctx: JobContext):
             called_num = _normalize_sip_user(m.group(1))
 
     # Priority 3: Job metadata
+    _job_meta: dict = {}
+    try:
+        _job_meta = json.loads(ctx.job.metadata) if ctx.job.metadata else {}
+        if not isinstance(_job_meta, dict):
+            _job_meta = {}
+    except Exception:
+        pass
+    is_test_call: bool = bool(_job_meta.get("test_mode"))
+    if is_test_call:
+        logger.info("[TEST CALL] Test mode detected — call logging and notifications will be skipped")
+
     if not called_num:
         try:
-            meta = json.loads(ctx.job.metadata) if ctx.job.metadata else {}
-            sip_info = meta.get("sip", {}) if isinstance(meta, dict) else {}
+            sip_info = _job_meta.get("sip", {})
             called_num = _normalize_sip_user(sip_info.get("toUser"))
             if not caller_phone:
                 caller_phone = sip_info.get("fromUser") or sip_info.get("phoneNumber")
@@ -1351,6 +1373,8 @@ async def entrypoint(ctx: JobContext):
     # Apply context
     clinic_name = (clinic_info or {}).get("name") or clinic_name
     clinic_tz = (clinic_info or {}).get("timezone") or clinic_tz
+    sentry_sdk.add_breadcrumb(category="lifecycle", message="clinic_loaded", level="info",
+                              data={"clinic_id": clinic_info.get("id")})
     clinic_region = (clinic_info or {}).get("default_phone_region") or clinic_region
     agent_lang = (agent_info or {}).get("default_language") or agent_lang
     state.tz = BOOKING_TZ
@@ -2112,6 +2136,13 @@ async def entrypoint(ctx: JobContext):
 
         logger.info(f"[USER] {text}")
         state.remember_user_text(text)
+        lower_text = text.lower()
+        if any(w in lower_text for w in ['cancel', 'cancellation', 'cancel my']):
+            state.appointment_action = 'cancelling'
+        elif any(w in lower_text for w in ['reschedule', 'change my appointment',
+                                            'move my appointment', 'different time',
+                                            'different day']):
+            state.appointment_action = 'rescheduling'
         _cancel_scheduled_filler()
 
         if state.final_goodbye_sent and not user_said_goodbye(text) and not user_declined_anything_else(text):
@@ -2376,6 +2407,7 @@ async def entrypoint(ctx: JobContext):
 
     # ── Say greeting ──────────────────────────────────────────────────────────
     await session.say(greeting)
+    sentry_sdk.add_breadcrumb(category="lifecycle", message="greeting_sent", level="info")
 
     # ── Pattern C: Deferred context (if 2s timeout was hit) ──────────────────
     if context_task and not context_task.done():
@@ -2406,24 +2438,95 @@ async def entrypoint(ctx: JobContext):
     async def _on_shutdown():
         dur = int(max(0, time.time() - call_started))
         logger.info(f"[LIFECYCLE] Call ended. Duration={dur}s, booked={state.booking_confirmed}")
+
+        if is_test_call:
+            logger.info("[TEST CALL] Test call completed")
+            return
+
         try:
-            if clinic_info and clinic_info.get("organization_id"):
-                from config import VALID_CALL_OUTCOMES, map_call_outcome
-                outcome = map_call_outcome(None, booking_made=bool(state.booking_confirmed))
+            if clinic_info and clinic_info.get("id"):
+                if state.booking_confirmed:
+                    outcome = "booked"
+                    sentry_sdk.add_breadcrumb(
+                        category="lifecycle", message="booking_confirmed", level="info",
+                        data={
+                            "patient_name": state.full_name,
+                            "appointment_time": str(state.appointment_dt) if hasattr(state, "appointment_dt") else None,
+                        },
+                    )
+                elif state.call_ended and getattr(state, "user_declined_more_help", False):
+                    outcome = "info_only"
+                elif not state.call_ended:
+                    outcome = "missed"
+                else:
+                    outcome = "info_only"
+                sentry_sdk.add_breadcrumb(
+                    category="lifecycle", message="call_ended", level="info",
+                    data={"outcome": outcome, "duration_seconds": dur},
+                )
+                sentry_sdk.set_user({
+                    "id": clinic_info.get("id"),
+                    "clinic": clinic_name,
+                })
+                now_iso = datetime.now(timezone.utc).isoformat()
+                started_iso = datetime.fromtimestamp(call_started, tz=timezone.utc).isoformat()
+                caller_num = state.phone_e164 or caller_phone
+                masked = caller_num[-4:].rjust(len(caller_num), "*") if caller_num else None
                 payload = {
-                    "organization_id": clinic_info["organization_id"],
+                    "id": str(uuid.uuid4()),
                     "clinic_id": clinic_info["id"],
-                    "caller_phone_masked": f"***{state.phone_last4}" if state.phone_last4 else "Unknown",
+                    "caller_number": caller_num,
+                    "caller_phone_masked": masked,
                     "caller_name": state.full_name,
                     "outcome": outcome,
                     "duration_seconds": dur,
+                    "started_at": started_iso,
+                    "ended_at": now_iso,
                 }
+                if clinic_info.get("organization_id"):
+                    payload["organization_id"] = clinic_info["organization_id"]
                 if agent_info and agent_info.get("id"):
                     payload["agent_id"] = agent_info["id"]
-                await asyncio.to_thread(
-                    lambda: supabase.table("call_sessions").insert(payload).execute()
+                _payload_snapshot = dict(payload)
+                success, result = await supabase_write_with_retry(
+                    lambda: supabase.table("call_sessions").insert(_payload_snapshot).execute(),
+                    table_name="call_sessions",
                 )
-                logger.info(f"[DB] Call session saved: outcome={outcome}")
+                if success:
+                    logger.info(f"[DB] Call session saved: outcome={outcome}")
+                else:
+                    logger.error(f"[DB] Call session permanently failed: {result!r}")
+
+                # Fire-and-forget notification webhooks (never block shutdown)
+                backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
+                agent_secret = os.getenv("AGENT_WEBHOOK_SECRET", "")
+                if backend_url and agent_secret:
+                    try:
+                        import aiohttp
+                        headers = {"X-Agent-Secret": agent_secret, "Content-Type": "application/json"}
+                        async with aiohttp.ClientSession() as http:
+                            if outcome == "booked":
+                                await http.post(
+                                    f"{backend_url}/api/notifications/booking-created",
+                                    json={"clinic_id": clinic_info["id"], "appointment_id": None},
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=5),
+                                )
+                                logger.info("[NOTIFY] booking-created webhook sent")
+                            elif outcome == "missed":
+                                await http.post(
+                                    f"{backend_url}/api/notifications/missed-call",
+                                    json={
+                                        "clinic_id": clinic_info["id"],
+                                        "caller_number": caller_num,
+                                        "called_at": started_iso,
+                                    },
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=5),
+                                )
+                                logger.info("[NOTIFY] missed-call webhook sent")
+                    except Exception as notify_err:
+                        logger.warning(f"[NOTIFY] Webhook failed (non-fatal): {notify_err!r}")
         except Exception as e:
             logger.error(f"[DB] Call session error: {e}")
 

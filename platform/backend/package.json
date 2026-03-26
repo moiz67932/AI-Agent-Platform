@@ -9,12 +9,21 @@
     "build": "echo 'No build step needed for backend'"
   },
   "dependencies": {
+    "@sentry/node": "^10.45.0",
+    "@sentry/profiling-node": "^10.45.0",
+    "@sparticuz/chromium-min": "^143.0.4",
     "@supabase/supabase-js": "^2.47.10",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "express-rate-limit": "^8.3.1",
     "helmet": "^8.0.0",
+    "livekit-server-sdk": "^2.15.0",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "node-html-markdown": "^2.0.0",
+    "puppeteer-core": "^24.40.0",
+    "resend": "^6.9.4",
+    "twilio": "^5.13.1"
   }
 }

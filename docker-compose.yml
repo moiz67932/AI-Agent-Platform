@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    env_file: .env.local
+    restart: unless-stopped
+    # LiveKit agent connects outbound to LiveKit Cloud over WebSocket.
+    # network_mode: host ensures UDP media ports are reachable if SIP
+    # trunk sends media directly to this host.
+    network_mode: host
+
+  backend:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile.backend
+    env_file: ./platform/backend/.env
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile.frontend
+      args:
+        # These are read from the frontend .env at build time.
+        # Override with: VITE_SUPABASE_URL=... docker-compose build frontend
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_API_URL: ${VITE_API_URL:-}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

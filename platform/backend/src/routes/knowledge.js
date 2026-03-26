@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
+import { requireRole } from '../middleware/requireRole.js';
+import { scrapeUrl, isValidScrapableUrl } from '../services/scraperService.js';
 
 const router = Router();
 
@@ -27,7 +29,7 @@ router.get('/:clinicId', async (req, res, next) => {
 });
 
 // POST /api/knowledge/:clinicId
-router.post('/:clinicId', async (req, res, next) => {
+router.post('/:clinicId', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { clinicId } = req.params;
     const { data, error } = await supabase
@@ -46,7 +48,7 @@ router.post('/:clinicId', async (req, res, next) => {
 });
 
 // PUT /api/knowledge/:clinicId/:articleId
-router.put('/:clinicId/:articleId', async (req, res, next) => {
+router.put('/:clinicId/:articleId', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { clinicId, articleId } = req.params;
     const { data, error } = await supabase
@@ -64,7 +66,7 @@ router.put('/:clinicId/:articleId', async (req, res, next) => {
 });
 
 // DELETE /api/knowledge/:clinicId/:articleId
-router.delete('/:clinicId/:articleId', async (req, res, next) => {
+router.delete('/:clinicId/:articleId', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { clinicId, articleId } = req.params;
     const { error } = await supabase
@@ -109,27 +111,78 @@ router.post('/:clinicId/search', async (req, res, next) => {
 });
 
 // POST /api/knowledge/:clinicId/import-url
-router.post('/:clinicId/import-url', async (req, res, next) => {
+router.post('/:clinicId/import-url', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
+    const { clinicId } = req.params;
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
+    if (!isValidScrapableUrl(url)) return res.status(400).json({ error: 'Invalid or disallowed URL' });
 
-    // Create a draft article from URL (real implementation would scrape)
-    const { data, error } = await supabase
-      .from('knowledge_articles')
-      .insert({
-        clinic_id: req.params.clinicId,
-        organization_id: req.orgId,
-        title: `Imported from ${new URL(url).hostname}`,
-        body: 'Content imported from website. Please edit this article.',
-        category: 'General',
-        status: 'draft',
-      })
+    const { data: job, error: jobErr } = await supabase
+      .from('scrape_jobs')
+      .insert({ clinic_id: clinicId, organization_id: req.orgId, url, status: 'pending' })
       .select()
       .single();
 
+    if (jobErr) throw jobErr;
+
+    // Fire and forget
+    (async () => {
+      const { error: procErr } = await supabase
+        .from('scrape_jobs')
+        .update({ status: 'processing' })
+        .eq('id', job.id);
+      if (procErr) return;
+
+      const result = await scrapeUrl(url);
+
+      if (result.error) {
+        await supabase.from('scrape_jobs').update({
+          status: 'failed',
+          error: result.error,
+          completed_at: new Date().toISOString(),
+        }).eq('id', job.id);
+        return;
+      }
+
+      let articlesCreated = 0;
+      for (const section of result.sections) {
+        const { error: insertErr } = await supabase.from('knowledge_articles').insert({
+          clinic_id: clinicId,
+          organization_id: req.orgId,
+          title: section.title || result.title,
+          body: section.body,
+          category: 'Imported',
+          status: 'active',
+        });
+        if (!insertErr) articlesCreated++;
+      }
+
+      await supabase.from('scrape_jobs').update({
+        status: 'done',
+        articles_created: articlesCreated,
+        completed_at: new Date().toISOString(),
+      }).eq('id', job.id);
+    })();
+
+    res.status(202).json({ jobId: job.id, message: 'Scraping started' });
+  } catch (err) { next(err); }
+});
+
+// GET /api/knowledge/:clinicId/scrape-status/:jobId
+router.get('/:clinicId/scrape-status/:jobId', async (req, res, next) => {
+  try {
+    const { clinicId, jobId } = req.params;
+    const { data, error } = await supabase
+      .from('scrape_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .eq('clinic_id', clinicId)
+      .eq('organization_id', req.orgId)
+      .single();
+
     if (error) throw error;
-    res.status(201).json({ data });
+    res.json({ data });
   } catch (err) { next(err); }
 });
 

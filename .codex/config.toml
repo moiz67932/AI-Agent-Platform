@@ -1,6 +1,6 @@
 [mcp_servers.supabase]
 url = "https://mcp.supabase.com/mcp?project_ref=seanzbqtziullcmfwamn"
-bearer_token = "sbp_2092db213a156aa17c8815e090de1d8cde653496"
+bearer_token_env_var = "sbp_2092db213a156aa17c8815e090de1d8cde653496"    # ← must be an env var NAME
 
 [mcp_servers.context7]
 command = "npx"
@@ -12,3 +12,7 @@ args = ["@playwright/mcp@latest"]
 
 [mcp_servers.livekit-docs]
 url = "https://docs.livekit.io/mcp"
+
+[mcp_servers.stitch]
+url = "https://stitch.googleapis.com/mcp"
+http_headers = { "X-Goog-Api-Key" = "AQ.Ab8RN6ITrlMp1Vblv9Db_CKsfekoaeTXYkqNOvHUAxL0tKXAdg" }
