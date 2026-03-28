@@ -1,0 +1,310 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================================================================== */
+/*  FOYER DESIGN SYSTEM — CSS Custom Properties                       */
+/* ================================================================== */
+
+:root {
+  /* ── Landing page (warm off-white) ── */
+  --foyer-bg:        #F7F6F3;
+  --foyer-surface:   #FFFFFF;
+  --foyer-surface2:  #F2F1EE;
+  --foyer-border:    #E5E3DD;
+  --foyer-border2:   #CCC9C1;
+  --foyer-t1:        #1A1917;
+  --foyer-t2:        #6A6860;
+  --foyer-t3:        #A8A59D;
+
+  --foyer-blue:      #2563EB;
+  --foyer-blue-bg:   #EEF3FF;
+  --foyer-blue-b:    #BFDBFE;
+  --foyer-green:     #15803D;
+  --foyer-green-bg:  #F0FDF4;
+  --foyer-green-b:   #BBF7D0;
+  --foyer-gdot:      #22C55E;
+  --foyer-purple:    #7C3AED;
+  --foyer-purple-bg: #F5F3FF;
+  --foyer-purple-b:  #DDD6FE;
+  --foyer-amber:     #B45309;
+  --foyer-amber-bg:  #FFFBEB;
+  --foyer-amber-b:   #FDE68A;
+  --foyer-red:       #DC2626;
+  --foyer-red-bg:    #FEF2F2;
+  --foyer-pink:      #DB2777;
+  --foyer-pink-bg:   #FDF2F8;
+  --foyer-pink-b:    #FBCFE8;
+
+  /* ── Dashboard (soft lavender) ── */
+  --dash-bg:         #EEEDF8;
+  --dash-surface:    #F6F5FC;
+  --dash-card:       #FFFFFF;
+  --dash-border:     #E0DEEF;
+  --dash-t1:         #1E1B2E;
+  --dash-t2:         #6B6880;
+  --dash-t3:         #AAA8BE;
+  --dash-blue:       #4F46E5;
+  --dash-blue-bg:    #EEF2FF;
+  --dash-blue-b:     #C7D2FE;
+  --dash-green:      #059669;
+  --dash-green-bg:   #ECFDF5;
+  --dash-green-b:    #A7F3D0;
+  --dash-gdot:       #10B981;
+  --dash-pink:       #DB2777;
+  --dash-pink-bg:    #FDF2F8;
+  --dash-pink-b:     #FBCFE8;
+  --dash-amber:      #D97706;
+  --dash-amber-bg:   #FFFBEB;
+  --dash-amber-b:    #FDE68A;
+  --dash-purple:     #7C3AED;
+  --dash-purple-bg:  #F5F3FF;
+  --dash-purple-b:   #DDD6FE;
+
+  /* ── Shadcn compat (light) ── */
+  --background: 40 7% 96%;
+  --foreground: 40 7% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 40 7% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 40 7% 10%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 5% 94%;
+  --secondary-foreground: 40 7% 10%;
+  --muted: 40 5% 94%;
+  --muted-foreground: 40 4% 46%;
+  --accent: 221 83% 53%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 40 8% 89%;
+  --input: 40 8% 89%;
+  --ring: 221 83% 53%;
+  --radius: 0.5rem;
+
+  /* ── Motion ── */
+  --foyer-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark {
+  --foyer-bg:        #0F0F0D;
+  --foyer-surface:   #161614;
+  --foyer-surface2:  #1E1E1B;
+  --foyer-border:    #2A2A26;
+  --foyer-border2:   #3A3A35;
+  --foyer-t1:        #F2F1EE;
+  --foyer-t2:        #9A9890;
+  --foyer-t3:        #55534D;
+
+  --dash-bg:         #0F0F0D;
+  --dash-surface:    #161614;
+  --dash-card:       #1E1E1B;
+  --dash-border:     #2A2A26;
+  --dash-t1:         #F2F1EE;
+  --dash-t2:         #9A9890;
+  --dash-t3:         #55534D;
+
+  --background: 40 7% 5%;
+  --foreground: 40 7% 95%;
+  --card: 40 7% 8%;
+  --card-foreground: 40 7% 95%;
+  --popover: 40 7% 8%;
+  --popover-foreground: 40 7% 95%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 5% 12%;
+  --secondary-foreground: 40 7% 95%;
+  --muted: 40 5% 12%;
+  --muted-foreground: 40 3% 53%;
+  --accent: 221 83% 53%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 40 5% 15%;
+  --input: 40 5% 15%;
+  --ring: 221 83% 53%;
+}
+
+/* ================================================================== */
+/*  Base                                                               */
+/* ================================================================== */
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
+
+/* ================================================================== */
+/*  Animations                                                         */
+/* ================================================================== */
+
+@keyframes foyer-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.45); }
+  70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+
+@keyframes foyer-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes foyer-waveform {
+  0%, 100% { transform: scaleY(0.3); }
+  50%      { transform: scaleY(1); }
+}
+
+@keyframes foyer-ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes foyer-fade-in-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes foyer-slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes foyer-blink {
+  0%, 50%  { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes foyer-draw-line {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+@keyframes foyer-bar-grow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+@keyframes foyer-stroke-draw {
+  from { stroke-dashoffset: var(--path-length, 1000); }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* ================================================================== */
+/*  Utility classes                                                     */
+/* ================================================================== */
+
+.foyer-live-pulse {
+  animation: foyer-pulse 2s infinite;
+}
+
+.foyer-card {
+  transition: transform 200ms cubic-bezier(0.16,1,0.3,1),
+              box-shadow 200ms cubic-bezier(0.16,1,0.3,1);
+}
+.foyer-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 36px rgba(0,0,0,0.08);
+}
+
+.foyer-row-hover {
+  position: relative;
+}
+.foyer-row-hover::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--dash-blue);
+  transform: scaleY(0);
+  transition: transform 180ms cubic-bezier(0.16,1,0.3,1);
+}
+.foyer-row-hover:hover::before {
+  transform: scaleY(1);
+}
+
+.foyer-ticker {
+  animation: foyer-ticker 28s linear infinite;
+}
+
+.foyer-terminal-cursor::after {
+  content: '\2588';
+  animation: foyer-blink 1s step-end infinite;
+  color: var(--dash-green);
+  margin-left: 2px;
+}
+
+.foyer-shimmer-btn {
+  position: relative;
+  overflow: hidden;
+}
+.foyer-shimmer-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: foyer-shimmer 2s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.foyer-shimmer-btn:hover::after {
+  opacity: 1;
+}
+
+/* ================================================================== */
+/*  Skeleton shimmer                                                    */
+/* ================================================================== */
+
+.foyer-skeleton {
+  background: linear-gradient(90deg, var(--dash-surface) 25%, var(--dash-border) 50%, var(--dash-surface) 75%);
+  background-size: 200% 100%;
+  animation: foyer-shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ================================================================== */
+/*  Scrollbar                                                           */
+/* ================================================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--foyer-t3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foyer-t2);
+}
+
+/* ================================================================== */
+/*  Focus states (accessibility)                                        */
+/* ================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--dash-blue);
+  outline-offset: 2px;
+}
+
+/* ================================================================== */
+/*  Reduced motion                                                      */
+/* ================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

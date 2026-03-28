@@ -1,254 +1,201 @@
-# VoiceAI Deployment Guide
+# Deployment
 
-## Architecture
+This flow assumes:
 
+- Python 3.11+
+- A Supabase/PostgreSQL database
+- LiveKit Cloud credentials
+- A Twilio account
+- A Hetzner VPS reachable over SSH
+
+## 1. Install dependencies
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
-                    +-----------+
-  Twilio SIP ------>| LiveKit   |<------- LiveKit Agent (Docker)
-                    | Cloud     |         connects outbound via WSS
-                    +-----------+
-                         |
-                    SIP trunk
-                         |
-  Browser ------->  Nginx :80/443  -----> Backend :3001  -----> Supabase Cloud
-                    (frontend +            (Express API)
-                     API proxy)
+
+## 2. Apply the database schema
+
+Run [database/schema.sql](/c:/Users/Moiz/Desktop/Agent/Agent/database/schema.sql) in the Supabase SQL editor, then seed the port table:
+
+```powershell
+$env:DATABASE_URL="postgresql://..."
+python scripts/init_port_registry.py
 ```
 
-Three Docker containers:
-- **agent** — Python LiveKit voice agent (`network_mode: host`)
-- **backend** — Node.js Express API
-- **frontend** — Nginx serving React SPA + reverse-proxying `/api/` to backend
+## 3. Configure environment variables
 
----
+Copy [`.env.example`](/c:/Users/Moiz/Desktop/Agent/Agent/.env.example) to `.env` and fill in:
 
-## Prerequisites
+- Hetzner SSH access
+- `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_SIP_HOST`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
+- `OPENAI_API_KEY`
+- `RESEND_API_KEY`, `EMAIL_FROM`
+- `GOOGLE_CREDENTIALS_JSON`
+- `INTERNAL_SECRET`
 
-Before starting, gather:
+For local development set:
 
-| Item | Where to get it |
-|------|----------------|
-| Domain name (e.g. `app.yourdomain.com`) | Any registrar |
-| Oracle Cloud account (Free Tier) | [cloud.oracle.com](https://cloud.oracle.com) |
-| Supabase project URL + keys | [supabase.com/dashboard](https://supabase.com/dashboard) |
-| LiveKit Cloud project + API keys | [cloud.livekit.io](https://cloud.livekit.io) |
-| OpenAI API key | [platform.openai.com](https://platform.openai.com) |
-| Twilio Account SID + Auth Token + SIP Trunk | [twilio.com/console](https://twilio.com/console) |
-| Resend API key (email notifications) | [resend.com](https://resend.com) |
-| Sentry DSN (error monitoring) | [sentry.io](https://sentry.io) |
+```env
+AGENTS_DOMAIN=localhost
+ENVIRONMENT=development
+```
 
----
+For production set:
 
-## Step 1: Provision the VM
+```env
+AGENTS_DOMAIN=agents.yourdomain.com
+ENVIRONMENT=production
+```
 
-### Oracle Cloud Free Tier (demo/staging)
+## 4. Prepare the Hetzner server
 
-1. Sign in to Oracle Cloud Console
-2. **Compute > Instances > Create Instance**
-3. Settings:
-   - **Name**: `voiceai-prod`
-   - **Region**: `eu-frankfurt-1` (or your nearest)
-   - **Image**: Ubuntu 22.04 (Canonical)
-   - **Shape**: `VM.Standard.A1.Flex` (ARM — permanent free tier)
-   - **OCPUs**: 4, **Memory**: 24 GB
-   - **Boot volume**: 50 GB (free tier default)
-   - **SSH key**: Upload your public key
-4. Under **Networking**, ensure the VCN has a public subnet
-5. After creation, note the **Public IP**
-6. Add **Ingress Rules** in the subnet's Security List:
-   - TCP 22 (SSH)
-   - TCP 80 (HTTP)
-   - TCP 443 (HTTPS)
-   - UDP 10000-60000 (LiveKit media — only needed if SIP media routes through this host)
-
-### Hetzner CX22 (production)
-
-1. Create a CX22 server (2 vCPU, 4 GB RAM, 40 GB disk) in Nuremberg
-2. Select Ubuntu 22.04, add your SSH key
-3. Add a firewall with the same port rules as above
-4. Note the public IP
-
----
-
-## Step 2: Server Setup
+SSH into the server and install the runtime:
 
 ```bash
-ssh ubuntu@<YOUR_VM_IP>
-
-# Download and run the setup script
-curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/scripts/setup-server.sh | bash
-
-# Log out and back in so Docker group takes effect
-exit
-ssh ubuntu@<YOUR_VM_IP>
+sudo apt-get update
+sudo apt-get install -y python3 python3-venv python3-pip nginx supervisor
+sudo mkdir -p /opt/agents /var/log/agents
+sudo chown -R $USER:$USER /opt/agents /var/log/agents
 ```
 
-Or manually:
-```bash
-git clone <your-repo-url> /opt/voiceai
-cd /opt/voiceai
-bash scripts/setup-server.sh
-exit  # log out/in for docker group
+If you are using a real domain, point `*.agents.yourdomain.com` at the server and install your wildcard certificate separately before enabling production traffic.
+
+## 5. Start the platform API
+
+Create a small FastAPI app that includes [agent_platform/routes/agents.py](/c:/Users/Moiz/Desktop/Agent/Agent/agent_platform/routes/agents.py). A minimal example:
+
+```python
+from fastapi import FastAPI
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+root = Path(__file__).resolve().parent
+spec = spec_from_file_location("voice_platform_routes", root / "agent_platform" / "routes" / "agents.py")
+module = module_from_spec(spec)
+spec.loader.exec_module(module)
+
+app = FastAPI()
+app.include_router(module.router)
 ```
 
----
+Run it locally:
 
-## Step 3: Configure Environment
-
-```bash
-cd /opt/voiceai
-
-# Agent environment
-cp .env.local.example .env.local
-nano .env.local
-# Fill in: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET,
-#          OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
-#          DEMO_CLINIC_ID, SENTRY_DSN, BACKEND_URL, AGENT_WEBHOOK_SECRET
-
-# Backend environment
-cp platform/backend/.env.example platform/backend/.env
-nano platform/backend/.env
-# Fill in: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
-#          TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_TRUNKING_SID,
-#          STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY,
-#          FROM_EMAIL, SENTRY_DSN, AGENT_WEBHOOK_SECRET
-#          Set FRONTEND_URL=https://app.yourdomain.com
-
-# Frontend build vars (Vite bakes these in at build time)
-export VITE_SUPABASE_URL=https://your-project.supabase.co
-export VITE_SUPABASE_ANON_KEY=eyJ...
-export VITE_API_URL=https://app.yourdomain.com
+```powershell
+uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
----
+## 6. Expose the platform API for Twilio during local development
 
-## Step 4: Deploy
-
-```bash
-cd /opt/voiceai
-./scripts/deploy.sh
+```powershell
+ngrok http 8000
 ```
 
-This will build all three images and start the containers. First build takes 3-5 minutes.
+Use the public HTTPS URL when you test Twilio callbacks locally.
 
-Verify:
-```bash
-curl http://localhost/health
-# {"status":"ok","timestamp":"..."}
+## 7. Create or update an agent row
 
-curl http://localhost/api/agents
-# {"error":"Unauthorized"} — correct, auth is working
+Insert an `agents` row with at least:
 
-docker compose logs agent --tail 50
-# Should show LiveKit worker connecting
-```
+- `id`
+- `organization_id`
+- `clinic_id`
+- `name`
+- `config_json`
 
----
+The `config_json` should include the business-facing runtime data such as:
 
-## Step 5: SSL with Certbot
-
-Since the frontend container runs Nginx inside Docker on port 80, the simplest SSL approach is to use a **host-level Nginx** as a TLS-terminating reverse proxy:
-
-```bash
-# Install host nginx
-sudo apt install -y nginx
-
-# Stop the frontend container from binding port 80 directly
-# Edit docker-compose.yml: change frontend ports to "8080:80"
-# Then restart: docker compose up -d frontend
-```
-
-Configure host Nginx (`/etc/nginx/sites-available/voiceai`):
-```nginx
-server {
-    listen 80;
-    server_name app.yourdomain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
+```json
+{
+  "name": "Bright Smile AI",
+  "clinic_name": "Bright Smile Dental",
+  "timezone": "America/New_York",
+  "country": "US",
+  "phone_region": "US",
+  "calendar_id": "clinic@example.com",
+  "notification_email": "owner@example.com",
+  "working_hours": {
+    "mon": [{"start": "09:00", "end": "17:00"}]
+  },
+  "services": [
+    {"name": "Cleaning", "duration": 60}
+  ]
 }
 ```
 
-```bash
-sudo ln -s /etc/nginx/sites-available/voiceai /etc/nginx/sites-enabled/
-sudo rm /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
+## 8. Publish the agent
 
-# Get SSL certificate
-sudo certbot --nginx -d app.yourdomain.com
+Call the publish endpoint:
 
-# Certbot auto-renews via systemd timer. Verify:
-sudo systemctl list-timers | grep certbot
+```powershell
+curl -X POST http://localhost:8000/api/agents/<agent-id>/publish
 ```
 
-After Certbot runs, it modifies the host Nginx config to add SSL listeners and redirect HTTP to HTTPS automatically.
+The publish flow will:
 
----
+- reserve a port from `port_registry`
+- generate a subdomain
+- upload the runtime to Hetzner
+- create a Python virtual environment remotely
+- install dependencies
+- write supervisor config
+- write nginx config unless `AGENTS_DOMAIN=localhost`
+- buy a Twilio number
+- create a LiveKit SIP inbound trunk for that number
+- create a LiveKit SIP dispatch rule that targets the agent’s unique `LIVEKIT_AGENT_NAME`
+- write the final `.env` to the remote host
+- start both supervisor processes
 
-## Step 6: Configure Twilio Webhooks
+## 9. Verify health
 
-In your Twilio Console:
-1. Go to **Phone Numbers > Active Numbers > your number**
-2. Set **Voice webhook** URL to: `https://app.yourdomain.com/api/calls/incoming`
-3. Method: POST
-4. For **SIP Trunk** voice URL, point to your LiveKit Cloud SIP endpoint (not this server)
+If `AGENTS_DOMAIN=localhost`, use:
 
----
-
-## Updating the Agent
-
-After pushing changes to `main`:
-
-```bash
-ssh ubuntu@<YOUR_VM_IP>
-cd /opt/voiceai
-./scripts/deploy.sh
+```powershell
+python scripts/verify_agent.py --health-url http://localhost:<assigned-port>/health --phone-number +15555550100
 ```
 
-That's it. The script pulls, rebuilds, and restarts only changed containers.
+If production DNS is live, use:
 
-To restart a single service:
-```bash
-docker compose restart agent      # just the voice agent
-docker compose restart backend    # just the API
+```powershell
+python scripts/verify_agent.py --health-url https://<subdomain>.agents.yourdomain.com/health --phone-number +15555550100
 ```
 
-To view logs:
-```bash
-docker compose logs -f agent      # follow agent logs
-docker compose logs -f backend    # follow backend logs
-docker compose logs frontend      # nginx access logs
+## 10. Make the first live call
+
+After publish returns a Twilio number, call it from a real phone. The runtime path is:
+
+1. Twilio hits `/twilio/voice` on the agent’s webhook server.
+2. The webhook returns TwiML that dials LiveKit SIP using the per-agent SIP credentials.
+3. LiveKit matches the inbound trunk for that number.
+4. LiveKit applies the per-agent dispatch rule and dispatches the unique `LIVEKIT_AGENT_NAME`.
+5. `worker_main.py` starts the wrapped agent entrypoint.
+6. `agent_wrapper.py` injects `AGENT_ID` and `AGENT_CONFIG` as fallback context.
+7. Your existing `agent.py` answers the call and uses Supabase tools as before.
+
+## 11. Restart or unpublish
+
+Restart:
+
+```powershell
+curl -X POST http://localhost:8000/api/agents/<agent-id>/restart
 ```
 
----
+Unpublish:
 
-## Migrating from Oracle to Hetzner
+```powershell
+curl -X POST http://localhost:8000/api/agents/<agent-id>/unpublish
+```
 
-1. Provision Hetzner CX22 (Step 1 above)
-2. Run `setup-server.sh` on the new server
-3. Clone repo, copy `.env` files (same values, just update `FRONTEND_URL` / `BACKEND_URL` if domain changes)
-4. Run `deploy.sh`
-5. Update DNS A record to point to Hetzner IP
-6. Run `certbot` on the new server
-7. Update Twilio webhook URLs if the domain changed
-8. Decommission Oracle VM
+## 12. First browser test without Twilio
 
----
+After publish, trigger the internal test endpoint with the shared secret:
 
-## Troubleshooting
+```powershell
+curl -X POST http://localhost:<assigned-port>/internal/test -H "X-Internal-Secret: change-me"
+```
 
-| Symptom | Fix |
-|---------|-----|
-| `curl localhost/health` connection refused | `docker compose ps` — is frontend running? Check `docker compose logs frontend` |
-| Agent not connecting to LiveKit | Check `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` in `.env.local` |
-| Frontend shows blank page | Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` were set before build |
-| 502 Bad Gateway on `/api/` | Backend container not running or crashed — `docker compose logs backend` |
-| Certbot fails | Ensure DNS A record points to this server's IP, and port 80 is open |
-| Agent container exits immediately | `docker compose logs agent` — usually a missing env var or Python import error |
+That returns a LiveKit room name and token so you can verify the worker dispatch path without placing a phone call.

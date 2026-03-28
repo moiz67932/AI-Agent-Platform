@@ -708,7 +708,7 @@ appointments WHERE clinic_id IN clinicIds AND [filters]
 
 ```
 Express on PORT 3001
-Security: helmet (CSP disabled), CORS (localhost:5173 + FRONTEND_URL)
+Security: helmet (CSP disabled), CORS (localhost:3000 + FRONTEND_URL)
 Logging: morgan 'dev'
 Body limit: 10MB JSON
 Health: GET /health → { status: 'ok', timestamp }

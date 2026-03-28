@@ -10,7 +10,10 @@
       "Bash(./node_modules/.bin/tsc --noEmit)",
       "Bash(wc -l c:/Users/Moiz/Desktop/Agent/Agent/platform/frontend/src/pages/*.tsx)",
       "Bash(npm install:*)",
-      "Bash(node_modules/.bin/tsc -p frontend/tsconfig.json --noEmit)"
+      "Bash(node_modules/.bin/tsc -p frontend/tsconfig.json --noEmit)",
+      "Bash(xargs grep:*)",
+      "Bash(find c:/Users/Moiz/Desktop/Agent/Agent/platform/frontend/src -name *.ts)",
+      "mcp__stitch__create_project"
     ]
   },
   "enableAllProjectMcpServers": true,

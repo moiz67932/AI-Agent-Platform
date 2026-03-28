@@ -723,7 +723,7 @@ No env vars required. All external dependencies are mocked.
 | `TWILIO_TRUNKING_SID` | No | Twilio SIP Trunk SID |
 | `STRIPE_SECRET_KEY` | No | Stripe secret key for billing |
 | `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook verification secret |
-| `FRONTEND_URL` | Yes | Frontend URL for CORS and email links (e.g., `http://localhost:5173`) |
+| `FRONTEND_URL` | Yes | Frontend URL for CORS and email links (e.g., `http://localhost:3000`) |
 | `PORT` | No | Server port (default: `3001`) |
 | `SENTRY_DSN` | No | Sentry DSN for backend error tracking |
 | `NODE_ENV` | No | Node environment (default: `development`) |

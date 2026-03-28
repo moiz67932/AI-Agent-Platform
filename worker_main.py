@@ -43,6 +43,7 @@ import sys
 import signal
 import asyncio
 import logging
+from dotenv import load_dotenv
 
 # Configure root logging once for third-party libraries. The application logger
 # is configured separately in config.py and should not be force-reset here.
@@ -54,8 +55,11 @@ if not logging.getLogger().handlers:
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-# FORCE PORT to avoid conflict if shell env has PORT=8080
-os.environ["PORT"] = "8080"
+load_dotenv(".env")
+load_dotenv(".env.local")
+
+WORKER_PORT = str(int(os.getenv("WORKER_PORT", "8080")))
+os.environ["PORT"] = WORKER_PORT
 
 from livekit import agents
 from livekit.agents import AgentServer, JobContext, JobProcess
@@ -78,7 +82,9 @@ from config import (
     LIVEKIT_AGENT_NAME,
     ENVIRONMENT,
 )
-from agent import entrypoint
+from agent_wrapper import entrypoint, get_livekit_agent_name, load_agent_runtime_env
+
+load_agent_runtime_env()
 
 # =============================================================================
 # SIGNAL HANDLING — Graceful shutdown for Cloud Run
@@ -141,7 +147,7 @@ def prewarm(proc: JobProcess):
 server = AgentServer(
     load_threshold=1.0,
     setup_fnc=prewarm,
-    port=8080,
+    port=int(WORKER_PORT),
     host="0.0.0.0",
 )
 
@@ -150,7 +156,7 @@ server = AgentServer(
 # RTC SESSION — Register entrypoint using decorator pattern
 # =============================================================================
 
-@server.rtc_session(agent_name=LIVEKIT_AGENT_NAME)
+@server.rtc_session(agent_name=get_livekit_agent_name())
 async def session_entrypoint(ctx: JobContext):
     """
     RTC session entrypoint - delegates to the actual agent entrypoint.
@@ -184,7 +190,7 @@ async def main():
     - Not needed when we have full control over the process
     """
     logger.info("[WORKER] Starting LiveKit worker...")
-    logger.info(f"[WORKER] Agent name: {LIVEKIT_AGENT_NAME}")
+    logger.info(f"[WORKER] Agent name: {get_livekit_agent_name()}")
     logger.info(f"[WORKER] Environment: {ENVIRONMENT}")
     
     # Run the server
