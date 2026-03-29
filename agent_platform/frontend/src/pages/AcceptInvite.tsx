@@ -75,7 +75,7 @@ export default function AcceptInvite() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 className="h-8 w-8 animate-spin text-dash-blue" />
       </div>
     );
   }
@@ -85,8 +85,8 @@ export default function AcceptInvite() {
       <div className="flex h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="pt-6 text-center space-y-4">
-            <p className="text-destructive font-medium">{loadError}</p>
-            <p className="text-sm text-muted-foreground">This invite may have expired or already been used.</p>
+            <p className="text-red-500 font-medium">{loadError}</p>
+            <p className="text-sm text-dash-t3">This invite may have expired or already been used.</p>
             <Button variant="outline" onClick={() => navigate('/login')}>Go to Login</Button>
           </CardContent>
         </Card>
@@ -100,8 +100,8 @@ export default function AcceptInvite() {
         <Card className="w-full max-w-md">
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />
-            <h2 className="text-xl font-semibold">You're in!</h2>
-            <p className="text-muted-foreground text-sm">Redirecting you now...</p>
+            <h2 className="text-xl font-semibold text-dash-t1">You're in!</h2>
+            <p className="text-dash-t3 text-sm">Redirecting you now...</p>
           </CardContent>
         </Card>
       </div>
@@ -115,11 +115,11 @@ export default function AcceptInvite() {
           <CardTitle className="text-xl">Team Invitation</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="rounded-lg bg-muted/50 p-4 space-y-2">
-            <p className="text-sm text-muted-foreground">You've been invited to join</p>
-            <p className="font-semibold text-lg">{inviteInfo?.organization_name}</p>
+          <div className="rounded-lg bg-dash-surface border border-dash-border p-4 space-y-2">
+            <p className="text-sm text-dash-t3">You've been invited to join</p>
+            <p className="font-semibold text-lg text-dash-t1">{inviteInfo?.organization_name}</p>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">as</span>
+              <span className="text-sm text-dash-t3">as</span>
               <Badge variant="secondary" className="capitalize">{inviteInfo?.role}</Badge>
             </div>
           </div>
@@ -143,13 +143,13 @@ export default function AcceptInvite() {
           )}
 
           {session && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-dash-t3">
               You're logged in as <strong>{(session as { user?: { email?: string } })?.user?.email}</strong>.
               Click below to accept the invitation.
             </p>
           )}
 
-          {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+          {submitError && <p className="text-sm text-red-500">{submitError}</p>}
 
           <Button
             className="w-full"

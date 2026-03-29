@@ -144,7 +144,7 @@ export function TestCallModal({ agentId, agentName, isOpen, onClose }: Props) {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Phone className="h-4 w-4 text-primary" />
+            <Phone className="h-4 w-4 text-dash-blue" />
             Test Call — {agentName}
           </DialogTitle>
         </DialogHeader>
@@ -152,8 +152,8 @@ export function TestCallModal({ agentId, agentName, isOpen, onClose }: Props) {
         <div className="py-2 space-y-4">
           {callState === 'idle' && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Click Start to connect to <span className="font-medium text-foreground">{agentName}</span>.
+              <p className="text-sm text-dash-t3">
+                Click Start to connect to <span className="font-medium text-dash-t1">{agentName}</span>.
                 Make sure your microphone is allowed in the browser.
               </p>
               <Button className="w-full" onClick={startCall}>
@@ -165,8 +165,8 @@ export function TestCallModal({ agentId, agentName, isOpen, onClose }: Props) {
 
           {callState === 'connecting' && (
             <div className="flex flex-col items-center gap-3 py-4">
-              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              <p className="text-sm text-muted-foreground">Connecting to {agentName}...</p>
+              <div className="h-8 w-8 rounded-full border-2 border-dash-blue border-t-transparent animate-spin" />
+              <p className="text-sm text-dash-t3">Connecting to {agentName}...</p>
             </div>
           )}
 
@@ -194,7 +194,7 @@ export function TestCallModal({ agentId, agentName, isOpen, onClose }: Props) {
                     onClick={toggleMute}
                     title={muted ? 'Unmute' : 'Mute'}
                   >
-                    {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
+                    {muted ? <MicOff className="h-4 w-4 text-red-500" /> : <Mic className="h-4 w-4" />}
                   </Button>
                   <Button
                     variant="destructive"
@@ -212,9 +212,9 @@ export function TestCallModal({ agentId, agentName, isOpen, onClose }: Props) {
 
           {callState === 'ended' && (
             <div className="space-y-4">
-              <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-center">
+              <div className="rounded-lg border border-dash-border bg-dash-surface px-4 py-3 text-center">
                 <p className="text-sm font-medium">Call ended</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Duration: {formatDuration(duration)}</p>
+                <p className="text-xs text-dash-t3 mt-0.5">Duration: {formatDuration(duration)}</p>
               </div>
               <Button className="w-full" variant="outline" onClick={reset}>
                 Start Another
@@ -224,8 +224,8 @@ export function TestCallModal({ agentId, agentName, isOpen, onClose }: Props) {
 
           {callState === 'error' && (
             <div className="space-y-4">
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-                <p className="text-sm text-destructive">{errorMsg || 'Something went wrong'}</p>
+              <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950 px-4 py-3">
+                <p className="text-sm text-red-600 dark:text-red-400">{errorMsg || 'Something went wrong'}</p>
               </div>
               <Button className="w-full" variant="outline" onClick={reset}>
                 Try Again

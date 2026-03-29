@@ -71,8 +71,8 @@ function OverviewTab({ agentId }: { agentId: string }) {
           ].map((kpi) => (
             <Card key={kpi.label}>
               <CardContent className="p-4">
-                <div className="text-2xl font-bold font-mono">{kpi.value}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">{kpi.label}</div>
+                <div className="text-2xl font-bold font-mono text-dash-t1">{kpi.value}</div>
+                <div className="mt-0.5 text-xs text-dash-t3">{kpi.label}</div>
               </CardContent>
             </Card>
           ))
@@ -125,21 +125,21 @@ function OverviewTab({ agentId }: { agentId: string }) {
                 <Link
                   key={call.id}
                   to={`/calls/${call.id}`}
-                  className="flex items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-accent"
+                  className="flex items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-dash-surface"
                 >
                   <div className="text-sm">
                     <span className="font-mono">{call.caller_number ? maskPhone(call.caller_number) : 'Unknown'}</span>
-                    <span className="ml-2 text-muted-foreground">{relativeTime(call.started_at)}</span>
+                    <span className="ml-2 text-dash-t3">{relativeTime(call.started_at)}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{formatDuration(call.duration_seconds)}</span>
+                    <span className="text-xs text-dash-t3">{formatDuration(call.duration_seconds)}</span>
                     <OutcomeBadge outcome={call.outcome} />
                   </div>
                 </Link>
               ))}
             </div>
           ) : (
-            <p className="py-4 text-center text-sm text-muted-foreground">No calls yet</p>
+            <p className="py-4 text-center text-sm text-dash-t3">No calls yet</p>
           )}
         </CardContent>
       </Card>
@@ -193,7 +193,7 @@ function SettingsTab({ agent }: { agent: NonNullable<ReturnType<typeof useAgent>
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm font-medium">Emergency Handling</div>
-          <div className="text-xs text-muted-foreground">Route urgent calls immediately</div>
+          <div className="text-xs text-dash-t3">Route urgent calls immediately</div>
         </div>
         <Switch checked={emergency} onCheckedChange={setEmergency} />
       </div>
@@ -241,7 +241,7 @@ export default function AgentOverview() {
   if (!agent) {
     return (
       <div className="flex flex-col items-center py-20">
-        <p className="text-muted-foreground">Agent not found</p>
+        <p className="text-dash-t3">Agent not found</p>
         <Button variant="ghost" className="mt-4" onClick={() => navigate('/agents')}>
           <ArrowLeft className="mr-2 h-4 w-4" />Back to Agents
         </Button>
@@ -268,20 +268,20 @@ export default function AgentOverview() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">{agent.name}</h1>
+                <h1 className="text-xl font-extrabold text-dash-t1">{agent.name}</h1>
                 <Badge variant="outline" style={{ color, borderColor: `${color}40` }}>{industryLabel}</Badge>
               </div>
               <div className="mt-0.5 flex items-center gap-3">
                 <StatusBadge status={agent.status} />
                 {agent.phone_number && (
-                  <span className="font-mono text-sm text-muted-foreground">{agent.phone_number.phone_number}</span>
+                  <span className="font-mono text-sm text-dash-t3">{agent.phone_number.phone_number}</span>
                 )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">{agent.status === 'live' ? 'Live' : 'Paused'}</span>
+              <span className="text-sm text-dash-t3">{agent.status === 'live' ? 'Live' : 'Paused'}</span>
               <Switch
                 checked={agent.status === 'live'}
                 onCheckedChange={() => toggleStatus.mutate({
@@ -324,7 +324,7 @@ export default function AgentOverview() {
         <TabsContent value="calls" className="mt-4">
           <Card>
             <CardContent className="p-6">
-              <p className="mb-4 text-sm text-muted-foreground">All calls for {agent.name}</p>
+              <p className="mb-4 text-sm text-dash-t3">All calls for {agent.name}</p>
               <Button asChild variant="outline">
                 <Link to={`/calls?agent=${agent.id}`}>
                   <ExternalLink className="mr-2 h-4 w-4" />View Full Call Log
@@ -337,7 +337,7 @@ export default function AgentOverview() {
         <TabsContent value="knowledge" className="mt-4">
           <Card>
             <CardContent className="p-6">
-              <p className="mb-4 text-sm text-muted-foreground">Manage FAQ articles for {agent.name}</p>
+              <p className="mb-4 text-sm text-dash-t3">Manage FAQ articles for {agent.name}</p>
               <Button asChild>
                 <Link to={`/knowledge/${agent.clinic_id}`}>
                   <BookOpen className="mr-2 h-4 w-4" />Open Knowledge Base

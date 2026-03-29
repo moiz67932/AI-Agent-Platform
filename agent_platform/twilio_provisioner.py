@@ -8,6 +8,7 @@ import logging
 import os
 import secrets
 from typing import Any
+from urllib.parse import urlparse
 
 from livekit import api
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -18,6 +19,33 @@ from agent_platform.utils import mask_secret
 from database.db import get_agent, update_agent_fields
 
 logger = logging.getLogger("voice_platform.twilio_provisioner")
+
+
+def _normalize_config_json(value: Any) -> dict[str, Any]:
+    """Normalize DB JSON values into a dictionary for Twilio provisioning logic."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _derive_livekit_sip_host(livekit_url: str) -> str:
+    """Derive the default LiveKit Cloud SIP endpoint from a WebSocket URL."""
+    raw = (livekit_url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    hostname = (parsed.hostname or raw).strip()
+    if hostname.endswith(".sip.livekit.cloud"):
+        return hostname
+    if hostname.endswith(".livekit.cloud"):
+        project_slug = hostname[: -len(".livekit.cloud")]
+        if project_slug:
+            return f"{project_slug}.sip.livekit.cloud"
+    return ""
 
 
 class TwilioProvisioner:
@@ -43,7 +71,11 @@ class TwilioProvisioner:
         self.livekit_url = livekit_url or os.getenv("LIVEKIT_URL", "")
         self.livekit_api_key = livekit_api_key or os.getenv("LIVEKIT_API_KEY", "")
         self.livekit_api_secret = livekit_api_secret or os.getenv("LIVEKIT_API_SECRET", "")
-        self.livekit_sip_host = livekit_sip_host or os.getenv("LIVEKIT_SIP_HOST", "")
+        self.livekit_sip_host = (
+            livekit_sip_host
+            or os.getenv("LIVEKIT_SIP_HOST", "")
+            or _derive_livekit_sip_host(self.livekit_url)
+        )
 
     def _create_livekit_api(self) -> api.LiveKitAPI:
         """Construct a LiveKit API client from configured credentials."""
@@ -86,7 +118,6 @@ class TwilioProvisioner:
             voice_method="POST",
             status_callback=f"{webhook_base_url}/twilio/status",
             status_callback_method="POST",
-            status_callback_event=["initiated", "ringing", "answered", "completed"],
         )
 
     @retry(
@@ -95,14 +126,49 @@ class TwilioProvisioner:
         retry=retry_if_exception_type((TwilioRestException, OSError)),
         reraise=True,
     )
-    def _update_webhook_sync(self, phone_sid: str, new_webhook_url: str) -> Any:
-        """Update the Twilio voice webhook URL for an existing number."""
-        return self.twilio.incoming_phone_numbers(phone_sid).update(
-            voice_url=f"{new_webhook_url}/twilio/voice",
-            voice_method="POST",
-            status_callback=f"{new_webhook_url}/twilio/status",
-            status_callback_method="POST",
-        )
+    def _update_webhook_sync(
+        self,
+        phone_sid: str,
+        new_webhook_url: str,
+        *,
+        clear_voice_routing_overrides: bool = False,
+    ) -> Any:
+        """Update the Twilio voice webhook URL for an existing number.
+
+        When we reuse an already-owned Twilio number for local testing, the number may still
+        have a Twilio `trunk_sid` or `voice_application_sid` attached from an earlier SIP
+        setup. Twilio ignores `voice_url` whenever either override is present, so we explicitly
+        clear them in the testing flow to force inbound calls back through `/twilio/voice`.
+
+        To return to a pure SIP-trunk-based production flow later, stop passing
+        `clear_voice_routing_overrides=True` when updating the number.
+        """
+        update_kwargs: dict[str, Any] = {
+            "voice_url": f"{new_webhook_url}/twilio/voice",
+            "voice_method": "POST",
+            "status_callback": f"{new_webhook_url}/twilio/status",
+            "status_callback_method": "POST",
+        }
+        if clear_voice_routing_overrides:
+            update_kwargs["trunk_sid"] = ""
+            update_kwargs["voice_application_sid"] = ""
+        return self.twilio.incoming_phone_numbers(phone_sid).update(**update_kwargs)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=retry_if_exception_type((TwilioRestException, OSError)),
+        reraise=True,
+    )
+    def _find_incoming_number_sync(self, phone_number: str) -> Any:
+        """Look up an already-owned Twilio incoming number by E.164 phone number."""
+        matches = self.twilio.incoming_phone_numbers.list(phone_number=phone_number, limit=1)
+        if not matches:
+            raise LookupError(
+                f"Twilio number {phone_number} was not found on the configured account. "
+                "Verify the account SID/auth token point to the account that owns this number."
+            )
+        return matches[0]
 
     @retry(
         stop=stop_after_attempt(3),
@@ -120,6 +186,7 @@ class TwilioProvisioner:
         agent_id: str,
         agent_name: str,
         phone_number: str,
+        prefer_existing: bool = False,
     ) -> dict[str, str]:
         """Create a LiveKit inbound trunk and SIP dispatch rule for the agent."""
         if not self.livekit_sip_host:
@@ -127,48 +194,130 @@ class TwilioProvisioner:
 
         sip_auth_username = f"agt-{agent_id.replace('-', '')[:18]}"
         sip_auth_password = secrets.token_urlsafe(24)
+        # With Twilio Programmable Voice -> TwiML -> <Dial><Sip>, LiveKit can authenticate the
+        # inbound SIP INVITE using the username/password from the <Sip> noun alone. Using an
+        # empty numbers list avoids brittle 404 rejections caused by destination-number matching
+        # differences in the Request-URI formatting between providers and LiveKit.
+        trunk_numbers: list[str] = []
         lkapi = self._create_livekit_api()
         try:
-            trunk = await lkapi.sip.create_inbound_trunk(
-                api.CreateSIPInboundTrunkRequest(
-                    trunk=api.SIPInboundTrunkInfo(
-                        name=f"{agent_name}-trunk",
-                        numbers=[phone_number],
-                        auth_username=sip_auth_username,
-                        auth_password=sip_auth_password,
-                    )
+            existing_trunk = None
+            if prefer_existing:
+                trunks = await lkapi.sip.list_inbound_trunk(
+                    api.ListSIPInboundTrunkRequest(numbers=[phone_number])
                 )
-            )
-            trunk_id = getattr(trunk, "sip_trunk_id")
+                existing_trunk = next(
+                    (item for item in trunks.items if phone_number in list(item.numbers)),
+                    None,
+                )
 
-            dispatch_rule = await lkapi.sip.create_dispatch_rule(
-                api.CreateSIPDispatchRuleRequest(
-                    dispatch_rule=api.SIPDispatchRuleInfo(
-                        name=f"{agent_name}-dispatch",
-                        trunk_ids=[trunk_id],
-                        rule=api.SIPDispatchRule(
-                            dispatch_rule_individual=api.SIPDispatchRuleIndividual(
-                                room_prefix="call-"
-                            )
-                        ),
-                        room_config=api.RoomConfiguration(
-                            agents=[
-                                api.RoomAgentDispatch(
-                                    agent_name=agent_name,
-                                    metadata=json.dumps(
-                                        {
-                                            "agent_id": agent_id,
-                                            "phone_number": phone_number,
-                                        },
-                                        separators=(",", ":"),
-                                    ),
-                                )
-                            ]
-                        ),
+            if existing_trunk is not None:
+                updated_trunk = await lkapi.sip.update_inbound_trunk_fields(
+                    str(existing_trunk.sip_trunk_id),
+                    numbers=trunk_numbers,
+                    auth_username=sip_auth_username,
+                    auth_password=sip_auth_password,
+                    name=f"{agent_name}-trunk",
+                )
+                trunk_id = str(updated_trunk.sip_trunk_id)
+                logger.info(
+                    "Reused existing LiveKit inbound trunk for agent=%s trunk=%s number=%s",
+                    agent_id,
+                    trunk_id,
+                    phone_number,
+                )
+            else:
+                trunk = await lkapi.sip.create_inbound_trunk(
+                    api.CreateSIPInboundTrunkRequest(
+                        trunk=api.SIPInboundTrunkInfo(
+                            name=f"{agent_name}-trunk",
+                            numbers=trunk_numbers,
+                            auth_username=sip_auth_username,
+                            auth_password=sip_auth_password,
+                        )
                     )
                 )
+                trunk_id = str(getattr(trunk, "sip_trunk_id"))
+
+            room_config = api.RoomConfiguration(
+                agents=[
+                    api.RoomAgentDispatch(
+                        agent_name=agent_name,
+                        metadata=json.dumps(
+                            {
+                                "agent_id": agent_id,
+                                "phone_number": phone_number,
+                            },
+                            separators=(",", ":"),
+                        ),
+                    )
+                ]
             )
-            dispatch_rule_id = getattr(dispatch_rule, "sip_dispatch_rule_id")
+            rule = api.SIPDispatchRule(
+                dispatch_rule_individual=api.SIPDispatchRuleIndividual(
+                    room_prefix="call-"
+                )
+            )
+
+            # For Twilio Programmable Voice -> TwiML -> <Dial><Sip>, LiveKit's own quickstart
+            # uses a plain dispatch rule without trunk restrictions. Matching every inbound trunk
+            # in the project avoids brittle 404 failures if LiveKit doesn't associate the incoming
+            # TwiML-originated SIP INVITE with trunk-scoped dispatch matching the same way as a
+            # provider-native trunk flow. We still create only one inbound trunk for this test
+            # number, so broad matching is acceptable here.
+            dispatch_rule_trunk_ids: list[str] = []
+
+            existing_dispatch_rule = None
+            if prefer_existing:
+                dispatch_rules = await lkapi.sip.list_dispatch_rule(
+                    api.ListSIPDispatchRuleRequest()
+                )
+                existing_dispatch_rule = next(
+                    (
+                        item
+                        for item in dispatch_rules.items
+                        if str(item.name or "") == f"{agent_name}-dispatch"
+                    ),
+                    None,
+                )
+
+            if existing_dispatch_rule is not None:
+                dispatch_rule = await lkapi.sip.update_dispatch_rule(
+                        str(existing_dispatch_rule.sip_dispatch_rule_id),
+                        api.SIPDispatchRuleInfo(
+                            sip_dispatch_rule_id=str(existing_dispatch_rule.sip_dispatch_rule_id),
+                            name=f"{agent_name}-dispatch",
+                            trunk_ids=dispatch_rule_trunk_ids,
+                            rule=rule,
+                            hide_phone_number=bool(existing_dispatch_rule.hide_phone_number),
+                            inbound_numbers=list(existing_dispatch_rule.inbound_numbers),
+                            metadata=str(existing_dispatch_rule.metadata or ""),
+                        attributes=dict(existing_dispatch_rule.attributes),
+                        room_preset=str(existing_dispatch_rule.room_preset or ""),
+                        room_config=room_config,
+                        krisp_enabled=bool(existing_dispatch_rule.krisp_enabled),
+                        media_encryption=existing_dispatch_rule.media_encryption,
+                    ),
+                )
+                dispatch_rule_id = str(dispatch_rule.sip_dispatch_rule_id)
+                logger.info(
+                    "Reused existing LiveKit dispatch rule for agent=%s rule=%s trunk=%s",
+                    agent_id,
+                    dispatch_rule_id,
+                    trunk_id,
+                )
+            else:
+                dispatch_rule = await lkapi.sip.create_dispatch_rule(
+                    api.CreateSIPDispatchRuleRequest(
+                        dispatch_rule=api.SIPDispatchRuleInfo(
+                            name=f"{agent_name}-dispatch",
+                            trunk_ids=dispatch_rule_trunk_ids,
+                            rule=rule,
+                            room_config=room_config,
+                        )
+                    )
+                )
+                dispatch_rule_id = str(getattr(dispatch_rule, "sip_dispatch_rule_id"))
         finally:
             await lkapi.aclose()
 
@@ -198,19 +347,46 @@ class TwilioProvisioner:
         if agent is None:
             raise LookupError(f"Agent {agent_id} was not found")
 
-        config_json = agent.get("config_json") or {}
-        area_code = None
-        if isinstance(config_json, dict):
-            area_code = config_json.get("area_code") or config_json.get("twilio_area_code")
+        config_json = _normalize_config_json(agent.get("config_json"))
+        area_code = config_json.get("area_code") or config_json.get("twilio_area_code")
 
-        available = await asyncio.to_thread(self._search_available_number_sync, country, area_code)
-        purchased = await asyncio.to_thread(self._purchase_number_sync, available.phone_number, webhook_base_url)
+        existing_number = config_json.get("twilio_existing_number")
+        logger.info(
+            "Twilio provisioning mode for agent=%s existing_number=%s",
+            agent_id,
+            existing_number or "<purchase-new-number>",
+        )
+
+        if existing_number:
+            # Trial-account testing path: reuse an already-owned number instead of trying to buy one.
+            # To return to the normal production purchase flow, remove `twilio_existing_number`
+            # from the agent config so this method falls back to searching and purchasing a new number.
+            logger.info(
+                "Reusing existing Twilio number for agent=%s number=%s",
+                agent_id,
+                existing_number,
+            )
+            purchased = await asyncio.to_thread(self._find_incoming_number_sync, str(existing_number))
+            await asyncio.to_thread(
+                self._update_webhook_sync,
+                purchased.sid,
+                webhook_base_url,
+                clear_voice_routing_overrides=True,
+            )
+        else:
+            available = await asyncio.to_thread(self._search_available_number_sync, country, area_code)
+            purchased = await asyncio.to_thread(self._purchase_number_sync, available.phone_number, webhook_base_url)
 
         agent_name = str(agent.get("livekit_agent_name") or f"agent-{agent_id.replace('-', '')[:12]}")
         livekit_routing = await self._create_livekit_routing(
             agent_id=agent_id,
             agent_name=agent_name,
             phone_number=purchased.phone_number,
+            # Reusing the Twilio number is useful for trial-account testing, but we create
+            # fresh LiveKit SIP resources on every publish. Reusing old trunks/dispatch rules
+            # can preserve stale SIP auth/routing state across publishes and cause Twilio's
+            # outbound SIP leg to fail even though the webhook itself is healthy.
+            prefer_existing=False,
         )
 
         updated_agent = await update_agent_fields(
@@ -244,8 +420,14 @@ class TwilioProvisioner:
         phone_sid = agent.get("twilio_phone_sid")
         dispatch_rule_id = agent.get("livekit_dispatch_rule_id")
         trunk_id = agent.get("livekit_trunk_id")
+        config_json = _normalize_config_json(agent.get("config_json"))
+        release_twilio_number = bool(config_json.get("twilio_release_on_unpublish", True))
+        # Always tear down LiveKit SIP resources on unpublish. Even when the Twilio number is
+        # intentionally retained for testing, the trunk/dispatch rule should be recreated on
+        # the next publish so SIP auth and dispatch state start clean every time.
+        release_livekit_resources = True
 
-        if dispatch_rule_id or trunk_id:
+        if release_livekit_resources and (dispatch_rule_id or trunk_id):
             lkapi = self._create_livekit_api()
             try:
                 if dispatch_rule_id:
@@ -256,9 +438,22 @@ class TwilioProvisioner:
                     await lkapi.sip.delete_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=str(trunk_id)))
             finally:
                 await lkapi.aclose()
+        elif dispatch_rule_id or trunk_id:
+            logger.info(
+                "Keeping existing LiveKit SIP resources for agent=%s trunk=%s rule=%s",
+                agent_id,
+                trunk_id or "<none>",
+                dispatch_rule_id or "<none>",
+            )
 
-        if phone_sid:
+        if phone_sid and release_twilio_number:
             await asyncio.to_thread(self._release_number_sync, str(phone_sid))
+        elif phone_sid:
+            logger.info(
+                "Keeping existing Twilio number attached to account for agent=%s sid=%s",
+                agent_id,
+                mask_secret(str(phone_sid)),
+            )
 
         await update_agent_fields(
             agent_id,

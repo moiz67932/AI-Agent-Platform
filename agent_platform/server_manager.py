@@ -11,6 +11,7 @@ import posixpath
 import shlex
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
 import paramiko
@@ -65,6 +66,22 @@ def load_ssh_key(key_path: str) -> paramiko.PKey:
         "Tried Ed25519, RSA, and ECDSA formats.\n"
         "Verify the file is a valid SSH private key (not .pub)."
     )
+
+
+def derive_livekit_sip_host(livekit_url: str) -> str:
+    """Derive the default LiveKit Cloud SIP endpoint from a WebSocket URL."""
+    raw = (livekit_url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    hostname = (parsed.hostname or raw).strip()
+    if hostname.endswith(".sip.livekit.cloud"):
+        return hostname
+    if hostname.endswith(".livekit.cloud"):
+        project_slug = hostname[: -len(".livekit.cloud")]
+        if project_slug:
+            return f"{project_slug}.sip.livekit.cloud"
+    return ""
 
 
 class AgentServerManager:
@@ -131,7 +148,7 @@ class AgentServerManager:
     def build_webhook_base_url(self, subdomain: str, port: int) -> str:
         """Build the public or local webhook base URL for an agent."""
         if self.agents_domain == "localhost":
-            return f"http://localhost:{port}"
+            return f"http://{self.host}:{port}"
         return f"https://{subdomain}.{self.agents_domain}"
 
     def _build_env_map(self, agent_id: str, agent_config: dict[str, Any], port: int, subdomain: str) -> dict[str, str]:
@@ -157,7 +174,7 @@ class AgentServerManager:
             "LIVEKIT_AGENT_NAME": livekit_agent_name,
             "LIVEKIT_API_KEY": os.getenv("LIVEKIT_API_KEY", ""),
             "LIVEKIT_API_SECRET": os.getenv("LIVEKIT_API_SECRET", ""),
-            "LIVEKIT_SIP_HOST": os.getenv("LIVEKIT_SIP_HOST", ""),
+            "LIVEKIT_SIP_HOST": os.getenv("LIVEKIT_SIP_HOST", "") or derive_livekit_sip_host(os.getenv("LIVEKIT_URL", "")),
             "LIVEKIT_URL": os.getenv("LIVEKIT_URL", ""),
             "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
             "PORT": str(port),
@@ -198,6 +215,7 @@ class AgentServerManager:
         web_name = f"agent-{agent_id}-web"
         python_bin = posixpath.join(remote_dir, ".venv", "bin", "python")
         uvicorn_bin = posixpath.join(remote_dir, ".venv", "bin", "uvicorn")
+        webhook_host = "0.0.0.0" if self.agents_domain == "localhost" else "127.0.0.1"
         return f"""
 [program:{worker_name}]
 directory={remote_dir}
@@ -212,7 +230,7 @@ environment=PYTHONUNBUFFERED="1"
 
 [program:{web_name}]
 directory={remote_dir}
-command={uvicorn_bin} webhook_server:app --host 127.0.0.1 --port {port}
+command={uvicorn_bin} webhook_server:app --host {webhook_host} --port {port}
 autostart=true
 autorestart=true
 stopasgroup=true
@@ -374,6 +392,13 @@ server {{
         supervisor_conf = self._render_supervisor_config(agent_id, remote_dir, port)
         nginx_conf = self._render_nginx_config(subdomain, port)
         health_url = f"{self.build_webhook_base_url(subdomain, port)}/health"
+        logger.info(
+            "Preparing deploy for agent=%s port=%s worker_port=%s webhook_base=%s",
+            agent_id,
+            port,
+            env_map["WORKER_PORT"],
+            self.build_webhook_base_url(subdomain, port),
+        )
 
         def _deploy() -> None:
             client = self._connect()
@@ -511,6 +536,7 @@ server {{
 
     async def _poll_health(self, health_url: str, *, timeout_seconds: int = 90) -> None:
         """Poll the webhook health endpoint until it becomes ready."""
+        logger.info("Polling agent health at %s", health_url)
         deadline = asyncio.get_running_loop().time() + timeout_seconds
         async with aiohttp.ClientSession() as session:
             while asyncio.get_running_loop().time() < deadline:

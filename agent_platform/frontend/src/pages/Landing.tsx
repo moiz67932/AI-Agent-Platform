@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -23,17 +23,62 @@ const NAV_LINKS = [
 ];
 
 const TICKER_ITEMS = [
-  'Appointment booked — Bright Smile Dental · 2m ago',
-  'Reschedule handled — City Ortho · 7m ago',
-  'FAQ answered — Lakeview Dental · 9m ago',
-  'Booking confirmed — Glow Med Spa · 12m ago',
-  'New patient intake — Smile Works · 15m ago',
-  'Callback scheduled — Metro Dental · 18m ago',
-  'Insurance query — Premier Ortho · 21m ago',
-  'Appointment booked — Radiance Spa · 24m ago',
-  'Follow-up reminder — City Dental · 27m ago',
-  'Walk-in converted — Bright Smile · 30m ago',
+  'Appointment booked - Bright Smile Dental · 2m ago',
+  'Reschedule handled - City Ortho · 7m ago',
+  'FAQ answered - Lakeview Dental · 9m ago',
+  'Booking confirmed - Glow Med Spa · 12m ago',
+  'New patient intake - Smile Works · 15m ago',
+  'Callback scheduled - Metro Dental · 18m ago',
+  'Insurance query - Premier Ortho · 21m ago',
+  'Appointment booked - Radiance Spa · 24m ago',
+  'Follow-up reminder - City Dental · 27m ago',
+  'Walk-in converted - Bright Smile · 30m ago',
 ];
+
+const HERO_TIMELINE_STEPS = [
+  {
+    key: 'routed',
+    title: 'Incoming call routed',
+    meta: '0.0s',
+    description: 'Foyer answers for Bright Smile Dental the moment the phone rings.',
+  },
+  {
+    key: 'answered',
+    title: 'AI receptionist answers',
+    meta: '423ms',
+    description: 'Greets naturally and confirms the reason for the call.',
+  },
+  {
+    key: 'captured',
+    title: 'Appointment captured',
+    meta: '18s',
+    description: 'Collects the service, date, time, and caller details.',
+  },
+  {
+    key: 'synced',
+    title: 'Calendar and notes synced',
+    meta: '+0.3s',
+    description: 'Calendar and follow-up are updated before the call ends.',
+  },
+] as const;
+
+const HERO_APPOINTMENT_DETAILS = [
+  { label: 'Caller', value: 'Sarah Johnson' },
+  { label: 'Service', value: 'Cleaning' },
+  { label: 'Date', value: 'Tue Apr 1' },
+  { label: 'Time', value: '2:00 PM' },
+] as const;
+
+const HERO_CONFIRMATIONS = [
+  'Google Calendar updated',
+  'Confirmation text queued',
+] as const;
+
+const HERO_REASSURANCE_ITEMS = [
+  'No code setup',
+  'Works 24/7',
+  'Cancel anytime',
+] as const;
 
 /* ======================================================================== */
 /*  HOOKS                                                                   */
@@ -110,7 +155,7 @@ function Nav() {
           : 'bg-transparent'
       )}
     >
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 h-[60px]">
+      <nav className="mx-auto flex h-[60px] max-w-[1240px] items-center justify-between px-6 lg:px-10 xl:px-14">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5">
           <div className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-foyer-t1">
@@ -201,294 +246,672 @@ function LivePulseDot({ className }: { className?: string }) {
   );
 }
 
-function HeroTimeline() {
-  const [step, setStep] = useState(-1);
+type TimelineStatus = 'pending' | 'done' | 'active';
+
+const TIMELINE_TIMINGS = [900, 2100, 3400];
+const TIMELINE_LOOP = 5600;
+
+function HeroCallCard() {
+  const [statuses, setStatuses] = useState<TimelineStatus[]>(['active', 'pending', 'pending', 'pending']);
+  const count = 147293;
 
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setStep(0), 500),
-      setTimeout(() => setStep(1), 1300),
-      setTimeout(() => setStep(2), 2400),
-      setTimeout(() => setStep(3), 3600),
-    ];
-    const loop = setInterval(() => {
-      setStep(-1);
-      const t = [
-        setTimeout(() => setStep(0), 500),
-        setTimeout(() => setStep(1), 1300),
-        setTimeout(() => setStep(2), 2400),
-        setTimeout(() => setStep(3), 3600),
+    let timeouts: ReturnType<typeof setTimeout>[] = [];
+    function run() {
+      setStatuses(['active', 'pending', 'pending', 'pending']);
+      timeouts = [
+        setTimeout(() => setStatuses(['done', 'active', 'pending', 'pending']), TIMELINE_TIMINGS[0]),
+        setTimeout(() => setStatuses(['done', 'done', 'active', 'pending']), TIMELINE_TIMINGS[1]),
+        setTimeout(() => setStatuses(['done', 'done', 'done', 'active']), TIMELINE_TIMINGS[2]),
+        setTimeout(run, TIMELINE_LOOP),
       ];
-      timers.push(...t);
-    }, 6000);
-    return () => { timers.forEach(clearTimeout); clearInterval(loop); };
+    }
+    run();
+    return () => timeouts.forEach(clearTimeout);
   }, []);
 
-  const nodes = [
-    { label: 'Call connected', time: '0ms', color: 'green' },
-    { label: 'Agent answered', time: '423ms', color: 'green' },
-    { label: 'Appointment captured', time: '18.2s', color: 'neutral' },
-    { label: 'Everything synced', time: '+0.3s', color: 'blue' },
-  ];
+  const nodeStyle = (s: TimelineStatus) =>
+    s === 'done'
+      ? 'border-foyer-green bg-foyer-green text-white'
+      : s === 'active'
+        ? 'border-foyer-t1 bg-foyer-t1 text-white'
+        : 'border-foyer-border bg-foyer-surface text-foyer-t3';
+
+  const lineStyle = (s: TimelineStatus) =>
+    s === 'done' ? 'bg-foyer-green-b' : 'bg-foyer-border';
 
   return (
-    <div className="w-full max-w-[500px] mx-auto">
-      <div className="rounded-2xl border border-foyer-border bg-foyer-surface p-5 shadow-lg shadow-black/[0.03]">
+    <div className="flex w-full flex-col gap-3">
+      {/* Main card */}
+      <motion.div
+        custom={0} variants={fadeUp} initial="hidden" animate="visible"
+        className="w-full rounded-[20px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.09)] backdrop-blur-sm"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-label uppercase text-foyer-t3 tracking-widest">Live call</span>
-            <span className="font-mono text-xs text-foyer-t2">&middot; +1 (310) 555-0142</span>
+            <PhoneCall className="h-3.5 w-3.5 text-emerald-500" />
+            <span className="text-[0.7rem] font-semibold text-foyer-t1">Live call · +1 (310) 555-0142</span>
           </div>
-          <span className="flex items-center gap-1.5 text-[10px] font-semibold text-foyer-green bg-foyer-green-bg border border-foyer-green-b px-2 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[0.6rem] font-semibold text-emerald-600">
             <LivePulseDot /> In progress
           </span>
         </div>
 
         {/* Timeline */}
-        <div className="space-y-0">
-          {nodes.map((node, i) => {
-            const isDone = step >= i;
-            const isActive = step === i && i === 3;
-            return (
-              <div key={i} className="flex gap-3">
-                {/* Connector */}
-                <div className="flex flex-col items-center">
-                  <div className={cn(
-                    'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300',
-                    isDone && !isActive && 'bg-foyer-green border-foyer-green',
-                    isActive && 'bg-foyer-blue border-foyer-blue',
-                    !isDone && 'bg-foyer-surface2 border-foyer-border'
-                  )}>
-                    {isDone && <Check className="h-3 w-3 text-white" />}
-                  </div>
-                  {i < 3 && (
-                    <div className={cn(
-                      'w-0.5 h-8 transition-all duration-300',
-                      step > i ? 'bg-foyer-green' : 'bg-foyer-border'
-                    )} />
-                  )}
-                </div>
-                {/* Content */}
-                <div className="flex-1 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-foyer-t1">{node.label}</span>
-                    <span className="text-[10px] font-mono text-foyer-t3">{node.time}</span>
-                  </div>
-                  {/* Step content */}
-                  {i === 0 && (
-                    <p className="text-[11px] text-foyer-t3 mt-1">Twilio → LiveKit → Bright Smile agent dispatched</p>
-                  )}
-                  {i === 1 && (
-                    <div className="mt-1.5 bg-foyer-surface2 rounded-lg px-3 py-2">
-                      <p className="text-xs text-foyer-t2 italic">"Hi, thanks for calling Bright Smile Dental! How can I help today?"</p>
-                      <div className="flex items-center gap-0.5 mt-2">
-                        {[1,2,3,4,5,6,7].map(j => (
-                          <div key={j} className="w-[3px] rounded-full bg-foyer-blue"
-                            style={{
-                              height: `${8 + Math.random() * 10}px`,
-                              animation: `foyer-waveform ${0.5 + j * 0.1}s ease-in-out infinite`,
-                              animationDelay: `${j * 0.08}s`,
-                            }} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {i === 2 && (
-                    <div className="mt-1.5 grid grid-cols-2 gap-2">
-                      {[
-                        { l: 'NAME', v: 'Sarah Johnson' },
-                        { l: 'SERVICE', v: 'Cleaning' },
-                        { l: 'DATE', v: 'Tue Apr 1' },
-                        { l: 'TIME', v: '2:00 PM' },
-                      ].map(f => (
-                        <div key={f.l} className="bg-foyer-surface2 rounded-lg px-3 py-2">
-                          <span className="text-label uppercase text-foyer-t3">{f.l}</span>
-                          <p className="text-sm font-semibold text-foyer-t1 mt-0.5">{f.v}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {i === 3 && (
-                    <div className="mt-1.5 space-y-1.5">
-                      {[
-                        'Google Calendar event created',
-                        'Confirmation email dispatched',
-                        'Database & analytics updated',
-                      ].map(t => (
-                        <div key={t} className="flex items-center gap-2">
-                          <Check className="h-3.5 w-3.5 text-foyer-green" />
-                          <span className="text-xs text-foyer-t2">{t}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+        <div className="mt-4 flex flex-col gap-0">
+
+          {/* Step 1 */}
+          <div className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-500', nodeStyle(statuses[0]))}>
+                {statuses[0] === 'done' && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+              </div>
+              <div className={cn('w-0.5 flex-1 my-1 min-h-[6px] transition-all duration-500', lineStyle(statuses[0]))} />
+            </div>
+            <div className="pb-3 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[0.68rem] font-semibold text-foyer-t1">Call connected</span>
+                <span className="text-[0.58rem] text-emerald-500 font-medium">· 0ms</span>
+              </div>
+              <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-1.5">
+                <p className="text-[0.58rem] leading-4 text-foyer-t3">Twilio → LiveKit → Bright Smile agent dispatched</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-500', nodeStyle(statuses[1]))}>
+                {statuses[1] === 'done' && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+              </div>
+              <div className={cn('w-0.5 flex-1 my-1 min-h-[6px] transition-all duration-500', lineStyle(statuses[1]))} />
+            </div>
+            <div className="pb-3 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[0.68rem] font-semibold text-foyer-t1">Agent answered</span>
+                <span className="text-[0.58rem] text-emerald-500 font-medium">· 423ms</span>
+              </div>
+              <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-2">
+                <p className="text-[0.58rem] italic leading-4 text-foyer-t2 mb-1.5">"Hi, thanks for calling Bright Smile Dental! How can I help today?"</p>
+                {/* Waveform */}
+                <div className="flex items-end gap-[2px] h-4">
+                  {[3,5,7,5,8,4,6].map((h, i) => (
+                    <span key={i} className="w-[3px] rounded-full bg-emerald-400 animate-foyer-waveform"
+                      style={{ height: `${h * 2}px`, '--wave-duration': `${0.6 + i * 0.1}s` } as React.CSSProperties} />
+                  ))}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-500', nodeStyle(statuses[2]))}>
+                {statuses[2] === 'done' && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+              </div>
+              <div className={cn('w-0.5 flex-1 my-1 min-h-[6px] transition-all duration-500', lineStyle(statuses[2]))} />
+            </div>
+            <div className="pb-3 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[0.68rem] font-semibold text-foyer-t1">Appointment captured</span>
+                <span className="text-[0.58rem] text-slate-400 font-medium">· 18.2s</span>
+              </div>
+              <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                <div><p className="text-[0.52rem] text-foyer-t3">Name</p><p className="text-[0.6rem] font-medium text-foyer-t1">Sarah Johnson</p></div>
+                <div><p className="text-[0.52rem] text-foyer-t3">Service</p><p className="text-[0.6rem] font-medium text-foyer-t1">Cleaning</p></div>
+                <div><p className="text-[0.52rem] text-foyer-t3">Date</p><p className="text-[0.6rem] font-medium text-foyer-t1">Tue Apr 1</p></div>
+                <div><p className="text-[0.52rem] text-foyer-t3">Time</p><p className="text-[0.6rem] font-medium text-foyer-t1">2:00 PM</p></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 4 */}
+          <div className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-500', nodeStyle(statuses[3]))}>
+                {(statuses[3] === 'done' || statuses[3] === 'active') && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[0.68rem] font-semibold text-foyer-t1">Everything synced</span>
+                <span className="text-[0.58rem] text-blue-500 font-medium">· +0.3s</span>
+              </div>
+              <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-1.5 space-y-1">
+                {['Google Calendar event created', 'Confirmation email dispatched', 'Database & analytics updated'].map(item => (
+                  <div key={item} className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
+                    <span className="text-[0.58rem] text-foyer-t2">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
         </div>
-      </div>
+      </motion.div>
+
+      {/* Counter strip */}
+      <motion.div
+        custom={1} variants={fadeUp} initial="hidden" animate="visible"
+        className="flex w-full items-center justify-between rounded-[16px] border border-slate-200/80 bg-white/95 px-3.5 py-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.07)]"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+            <TrendingUp className="h-3.5 w-3.5" />
+          </div>
+          <div>
+            <p className="font-mono text-[1rem] font-bold leading-none tracking-[-0.04em] text-slate-800">
+              {count.toLocaleString()}
+            </p>
+            <p className="mt-0.5 text-[0.55rem] text-foyer-t3">appointments booked through Foyer</p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[0.6rem] font-semibold text-emerald-600">
+          <LivePulseDot /> Live
+        </span>
+      </motion.div>
     </div>
   );
 }
+function HeroSupportStack() {
+  const [count, setCount] = useState(147393);
+  const handledCalls = useCountUp(142, 1400);
+  const bookingRate = useCountUp(41, 1400);
 
-function HeroSideCardLeft() {
-  return (
-    <div className="hidden xl:block absolute left-0 top-20 w-[190px]">
-      <div className="rounded-xl border border-foyer-border bg-foyer-surface p-4 shadow-lg shadow-black/[0.03]">
-        <span className="text-label uppercase text-foyer-t3">This week</span>
-        <p className="text-metric font-extrabold text-foyer-t1 mt-1">142</p>
-        <p className="text-xs text-foyer-t2">calls handled</p>
-        {/* Mini bars */}
-        <div className="flex items-end gap-1 h-8 mt-3">
-          {[40, 55, 35, 65, 50, 75, 90].map((h, i) => (
-            <div key={i} className={cn(
-              'flex-1 rounded-sm transition-all',
-              i >= 5 ? 'bg-foyer-blue' : 'bg-foyer-blue/20'
-            )} style={{ height: `${h}%` }} />
-          ))}
-        </div>
-        <div className="border-t border-foyer-border mt-3 pt-2 flex justify-between">
-          <div>
-            <span className="text-sm font-bold text-foyer-green">58</span>
-            <span className="text-[10px] text-foyer-t3 ml-1">Booked</span>
-          </div>
-          <div>
-            <span className="text-sm font-bold text-foyer-t1">41%</span>
-            <span className="text-[10px] text-foyer-t3 ml-1">Rate</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setCount((current) => current + Math.floor(Math.random() * 3) + 1);
+    }, 3200);
+    return () => clearInterval(iv);
+  }, []);
 
-function HeroSideCardRight() {
-  const items = [
-    { color: 'bg-foyer-green', name: 'Sarah Johnson', time: '2:00 PM', service: 'Cleaning' },
-    { color: 'bg-foyer-blue', name: 'Marcus Webb', time: '3:30 PM', service: 'HydraFacial' },
-    { color: 'bg-foyer-purple', name: 'Linda Park', time: '4:15 PM', service: 'Consult' },
+  const scheduleItems = [
+    { color: 'bg-emerald-500', name: 'Sarah Johnson', detail: '2:00 PM - Cleaning' },
+    { color: 'bg-sky-400', name: 'Marcus Webb', detail: '3:30 PM - HydraFacial' },
   ];
+
   return (
-    <div className="hidden xl:block absolute right-0 top-16 w-[190px]">
-      <div className="rounded-xl border border-foyer-border bg-foyer-surface p-4 shadow-lg shadow-black/[0.03]">
-        <span className="text-label uppercase text-foyer-t3">Today's schedule</span>
+    <div className="mx-auto flex w-full max-w-[220px] flex-col gap-3 lg:max-w-[240px]">
+      <motion.div
+        custom={0}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="rounded-[20px] border border-slate-200/80 bg-white/90 p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur-sm"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-foyer-t3">
+            Today&apos;s schedule
+          </span>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[8px] font-semibold text-emerald-700">
+            +3 fresh
+          </span>
+        </div>
         <div className="mt-3 space-y-2.5">
-          {items.map(it => (
-            <div key={it.name} className="flex items-start gap-2">
-              <span className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', it.color)} />
+          {scheduleItems.map((item) => (
+            <div key={item.name} className="flex items-start gap-2">
+              <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', item.color)} />
               <div>
-                <p className="text-xs font-semibold text-foyer-t1">{it.name}</p>
-                <p className="text-[10px] text-foyer-t3">{it.time} &middot; {it.service}</p>
+                <p className="text-[0.75rem] font-medium text-foyer-t1">{item.name}</p>
+                <p className="text-[0.7rem] text-foyer-t2">{item.detail}</p>
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-3 pt-2 border-t border-foyer-border">
-          <span className="text-[10px] font-semibold text-foyer-green">+3 new bookings today</span>
+      </motion.div>
+
+      <motion.div
+        custom={1}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="hidden rounded-[34px] border border-slate-200/80 bg-white/90 px-6 py-7 text-center shadow-[0_18px_46px_rgba(15,23,42,0.09)] backdrop-blur-sm"
+      >
+        <div className="relative overflow-hidden rounded-[30px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(245,252,248,0.94))] p-5 shadow-[0_26px_72px_rgba(16,185,129,0.12)] backdrop-blur-sm">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.14),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(99,102,241,0.12),transparent_34%)]" />
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-foyer-t3">
+                Today's schedule
+              </span>
+              <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                +3 fresh
+              </span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {scheduleItems.map((item) => (
+                <div key={item.name} className="rounded-2xl bg-white/72 px-3.5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+                  <div className="flex items-start gap-3">
+                    <span className={cn('mt-1 h-2.5 w-2.5 shrink-0 rounded-full', item.color)} />
+                    <div>
+                      <p className="text-[13.5px] font-semibold text-foyer-t1">
+                        {item.name}
+                      </p>
+                      <p className="mt-1 text-[11px] text-foyer-t2">
+                        {item.detail}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3.5 py-3 text-[12px] font-medium text-emerald-800">
+              Calendar confirmations and reminder texts are queued automatically.
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      <div className="hidden absolute bottom-0 left-8 w-[17rem] sm:left-10 sm:w-[18.5rem]" style={{ animation: 'foyer-float 12s ease-in-out infinite' }}>
+        <div className="relative overflow-hidden rounded-[30px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(243,247,255,0.94))] p-5 shadow-[0_26px_72px_rgba(37,99,235,0.14)] backdrop-blur-sm">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.12),transparent_36%)]" />
+          <div className="relative">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 shadow-inner">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-foyer-t3">
+                    Total automated
+                  </p>
+                  <p className="mt-1 text-[1.8rem] font-semibold leading-none tracking-[-0.05em] text-foyer-t1">
+                    {count.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-3 py-1 text-[10px] font-semibold text-emerald-700">
+                <LivePulseDot /> Live
+              </span>
+            </div>
+            <p className="mt-4 text-[13px] leading-6 text-foyer-t2">
+              Bookings, reminders, and follow-up updates are being handled around the clock.
+            </p>
+            <div className="mt-4 flex items-end gap-1.5">
+              {[34, 52, 46, 64, 58, 82, 74, 96].map((height, index) => (
+                <span
+                  key={height}
+                  className={cn(
+                    'flex-1 rounded-full bg-gradient-to-t from-sky-500 via-blue-500 to-violet-500',
+                    index < 3 && 'opacity-40'
+                  )}
+                  style={{ height: `${height}%` }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-function CounterStrip() {
-  const [count, setCount] = useState(147296);
-  useEffect(() => {
-    const iv = setInterval(() => setCount(c => c + Math.floor(Math.random() * 3) + 1), 3200);
-    return () => clearInterval(iv);
-  }, []);
-
-  return (
-    <div className="w-full max-w-[500px] mx-auto mt-4">
-      <div className="flex items-center justify-between rounded-xl border border-foyer-border bg-foyer-surface px-5 py-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-foyer-green-bg flex items-center justify-center">
-            <TrendingUp className="h-4 w-4 text-foyer-green" />
-          </div>
-          <div>
-            <span className="text-lg font-extrabold text-foyer-t1 font-mono tabular-nums">{count.toLocaleString()}</span>
-            <p className="text-[11px] text-foyer-t2">appointments booked through Foyer</p>
-          </div>
+      <motion.div
+        custom={1}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="rounded-[20px] border border-slate-200/80 bg-white/90 px-4 py-4 text-center shadow-[0_18px_46px_rgba(15,23,42,0.09)] backdrop-blur-sm"
+      >
+        <p className="text-[2.6rem] font-semibold leading-none tracking-[-0.08em] text-slate-700">
+          {handledCalls}
+        </p>
+        <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-foyer-t3">
+          Calls handled
+        </p>
+        <div className="mt-3 flex items-center justify-center gap-1.5">
+          <span className="text-[1.4rem] font-semibold tracking-[-0.06em] text-emerald-500">58</span>
+          <span className="text-[9px] font-medium uppercase tracking-[0.08em] text-foyer-t2">Booked</span>
         </div>
-        <span className="flex items-center gap-1.5 text-[10px] font-semibold text-foyer-green bg-foyer-green-bg border border-foyer-green-b px-2 py-0.5 rounded-full">
-          <LivePulseDot /> Live
-        </span>
-      </div>
+      </motion.div>
+
+      <motion.div
+        custom={2}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="rounded-[20px] border border-slate-200/80 bg-white/90 p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur-sm"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <TrendingUp className="h-3 w-3" />
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-semibold text-emerald-600">
+            <LivePulseDot /> Live
+          </span>
+        </div>
+        <p className="mt-2.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-foyer-t3">
+          Total automated
+        </p>
+        <p className="mt-1 text-[1.6rem] font-semibold leading-none tracking-[-0.06em] text-slate-700">
+          {count.toLocaleString()}
+        </p>
+        <p className="mt-2 text-[0.7rem] text-foyer-t2">
+          Bookings handled 24/7.
+        </p>
+      </motion.div>
     </div>
   );
 }
 
 function Hero() {
   return (
-    <section className="relative pt-32 pb-16 lg:pt-40 lg:pb-24 overflow-hidden">
-      <div className="mx-auto max-w-7xl px-6 text-center">
-        {/* Eyebrow pill */}
-        <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible" className="flex justify-center mb-6">
-          <span className="inline-flex items-center gap-2 text-xs font-semibold text-foyer-green bg-foyer-green-bg border border-foyer-green-b px-4 py-1.5 rounded-full">
-            <LivePulseDot /> Now live &middot; Trusted by 40+ businesses
-          </span>
-        </motion.div>
+    <section className="relative overflow-hidden bg-[#f7f7f4] pb-16 pt-20 lg:pb-28 lg:pt-28">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_16%,rgba(255,255,255,0.96),rgba(247,247,244,0.78)_42%,rgba(224,229,255,0.5)_100%)]" />
+      <div className="absolute inset-x-0 top-0 h-full bg-[radial-gradient(circle_at_12%_48%,rgba(190,190,255,0.14),transparent_28%),radial-gradient(circle_at_88%_25%,rgba(167,180,255,0.16),transparent_26%)]" />
 
-        {/* Headline */}
-        <motion.h1 custom={1} variants={fadeUp} initial="hidden" animate="visible" className="text-hero-sm lg:text-hero mx-auto max-w-4xl">
-          <span className="text-foyer-t1">Your calls.</span>
-          <br />
-          <span className="text-foyer-t1">
-            <span className="font-display italic text-foyer-blue">Answered perfectly.</span>
-          </span>
-          <br />
-          <span className="text-foyer-t1">Every time.</span>
-        </motion.h1>
+      <div className="relative mx-auto grid max-w-[1280px] gap-6 px-6 lg:grid-cols-[300px_minmax(0,1fr)_240px] lg:items-center lg:px-10 xl:px-14">
+        <div className="order-2 lg:order-1">
+          <HeroCallCard />
+        </div>
 
-        {/* Sub */}
-        <motion.p custom={2} variants={fadeUp} initial="hidden" animate="visible" className="mt-6 text-base lg:text-[17px] text-foyer-t2 max-w-[480px] mx-auto leading-relaxed">
-          Deploy an AI receptionist in 60 seconds. It books appointments, handles questions, and syncs your calendar — 24/7, zero staff needed.
-        </motion.p>
+        <div className="order-1 text-center lg:order-2">
+          <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible" className="flex justify-center">
+            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-5 py-2 text-sm font-medium text-emerald-700 shadow-[0_10px_30px_rgba(34,197,94,0.08)] backdrop-blur-sm">
+              <LivePulseDot /> Now live · Trusted by 40+ businesses
+            </span>
+          </motion.div>
 
-        {/* CTAs */}
-        <motion.div custom={3} variants={fadeUp} initial="hidden" animate="visible" className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-8">
-          <Link to="/signup" className="inline-flex items-center gap-2 bg-foyer-t1 text-foyer-surface font-medium text-[15px] px-7 py-3.5 rounded-xl hover:opacity-90 transition-opacity">
-            Deploy your agent <ArrowRight className="h-4 w-4" />
-          </Link>
-          <button className="inline-flex items-center gap-2 border border-foyer-border text-foyer-t1 font-medium text-[15px] px-7 py-3.5 rounded-xl hover:border-foyer-border2 transition-colors">
-            Watch demo
-          </button>
-        </motion.div>
+          <motion.h1
+            custom={1}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mx-auto mt-6 max-w-[760px] text-[2rem] font-extrabold leading-[0.92] tracking-[-0.08em] text-[#0f1115] sm:text-[2.4rem] lg:text-[2.9rem] xl:text-[3.4rem]"
+          >
+            <span className="block">Your calls.</span>
+            <span
+              className="mt-2 block text-[1.8rem] font-medium leading-none tracking-[-0.04em] text-[#1757f6] sm:text-[2.2rem] lg:text-[2.7rem] xl:text-[3.1rem]"
+              style={{ fontFamily: '"Caveat", cursive' }}
+            >
+              Answered perfectly.
+            </span>
+            <span className="mt-2 block">Every time.</span>
+          </motion.h1>
 
-        {/* Social proof */}
-        <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible" className="flex items-center justify-center gap-2 mt-6">
-          <div className="flex -space-x-2">
-            {[
-              'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500'
-            ].map((bg, i) => (
-              <div key={i} className={cn('w-[26px] h-[26px] rounded-full border-2 border-foyer-bg flex items-center justify-center text-[9px] font-bold text-white', bg)}>
-                {['BS','SS','CC','DP'][i]}
+          <motion.p
+            custom={2}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mx-auto mt-5 max-w-[520px] text-[0.82rem] leading-6 text-slate-600 sm:text-[0.9rem]"
+          >
+            Deploy an AI receptionist in 60 seconds. It books appointments, handles questions, and syncs your calendar - 24/7.
+          </motion.p>
+
+          <motion.div custom={3} variants={fadeUp} initial="hidden" animate="visible" className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <Link
+              to="/signup"
+              className="inline-flex min-h-[56px] items-center gap-3 rounded-full bg-[#111111] px-8 py-4 text-[1.05rem] font-semibold text-white shadow-[0_16px_40px_rgba(17,17,17,0.2)] transition-transform duration-200 hover:-translate-y-0.5"
+            >
+              Deploy your agent <ArrowRight className="h-5 w-5" />
+            </Link>
+            <button className="inline-flex min-h-[56px] items-center justify-center rounded-full border border-slate-200 bg-white/70 px-8 py-4 text-[1.05rem] font-medium text-slate-700 shadow-[0_10px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition-colors hover:border-slate-300">
+              Watch demo
+            </button>
+          </motion.div>
+
+          <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible" className="mt-11 flex flex-col items-center gap-4">
+            <div className="flex items-center">
+              {[
+                'from-[#c58f62] to-[#6d4c41]',
+                'from-[#5b718d] to-[#29465b]',
+                'from-[#dfb07b] to-[#825b3c]',
+              ].map((gradient, index) => (
+                <div
+                  key={gradient}
+                  className={cn(
+                    'flex h-11 w-11 items-center justify-center rounded-full border-[3px] border-[#f7f7f4] bg-gradient-to-br text-xs font-semibold text-white shadow-sm',
+                    gradient,
+                    index > 0 && '-ml-2.5'
+                  )}
+                >
+                  {['SJ', 'MW', 'LP'][index]}
+                </div>
+              ))}
+              <div className="-ml-2.5 flex h-11 w-11 items-center justify-center rounded-full border-[3px] border-[#f7f7f4] bg-[#2563eb] text-sm font-semibold text-white shadow-sm">
+                40+
               </div>
-            ))}
-          </div>
-          <span className="text-xs text-foyer-t3">Joined by <strong className="text-foyer-t2">40+ clinics & spas</strong> this month</span>
-        </motion.div>
+            </div>
+            <p className="text-[1rem] text-slate-600">
+              Joined by <span className="font-semibold text-slate-900">40+ clinics &amp; spas</span>
+            </p>
+          </motion.div>
+        </div>
 
-        {/* Hero cards stage */}
-        <div className="relative mt-12 lg:mt-16">
-          <motion.div custom={3.5} variants={fadeUp} initial="hidden" animate="visible">
-            <HeroSideCardLeft />
-          </motion.div>
-          <motion.div custom={7.5} variants={fadeUp} initial="hidden" animate="visible">
-            <HeroSideCardRight />
-          </motion.div>
-          <motion.div custom={3.5} variants={fadeUp} initial="hidden" animate="visible">
-            <HeroTimeline />
-            <CounterStrip />
-          </motion.div>
+        <div className="order-3">
+          <HeroSupportStack />
         </div>
       </div>
     </section>
   );
 }
 
+function HeroWorkflowCard() {
+  const [statuses, setStatuses] = useState<TimelineStatus[]>(['active', 'pending', 'pending', 'pending']);
+
+  useEffect(() => {
+    let timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    function run() {
+      setStatuses(['active', 'pending', 'pending', 'pending']);
+      timeouts = [
+        setTimeout(() => setStatuses(['done', 'active', 'pending', 'pending']), TIMELINE_TIMINGS[0]),
+        setTimeout(() => setStatuses(['done', 'done', 'active', 'pending']), TIMELINE_TIMINGS[1]),
+        setTimeout(() => setStatuses(['done', 'done', 'done', 'active']), TIMELINE_TIMINGS[2]),
+        setTimeout(run, TIMELINE_LOOP),
+      ];
+    }
+
+    run();
+    return () => timeouts.forEach(clearTimeout);
+  }, []);
+
+  const nodeStyle = (status: TimelineStatus) =>
+    status === 'done'
+      ? 'border-foyer-green bg-foyer-green text-white'
+      : status === 'active'
+        ? 'border-foyer-t1 bg-foyer-t1 text-white'
+        : 'border-foyer-border bg-foyer-surface text-foyer-t3';
+
+  const lineStyle = (status: TimelineStatus) =>
+    status === 'done' ? 'bg-foyer-green-b' : 'bg-foyer-border';
+
+  return (
+    <motion.div
+      custom={0}
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      className="foyer-card relative w-full max-w-[456px] overflow-hidden rounded-[22px] border border-foyer-border bg-foyer-surface p-3.5 shadow-[0_22px_52px_rgba(15,23,42,0.065)] sm:p-4"
+    >
+      <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-foyer-green-bg to-transparent" />
+      <div className="relative">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-label uppercase text-foyer-t3 tracking-[0.18em]">Live call workflow</p>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-foyer-t1 sm:text-[13px]">
+              <PhoneCall className="h-3.5 w-3.5 text-foyer-green" />
+              <span>Bright Smile Dental</span>
+              <span className="text-foyer-t3">&middot;</span>
+              <span className="font-medium text-foyer-t2">+1 (310) 555-0142</span>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-foyer-green-b/70 bg-foyer-green-bg/80 px-2.5 py-1 text-[10px] font-semibold text-foyer-green">
+            <LivePulseDot />
+            Agent live
+          </span>
+        </div>
+
+        <div className="mt-3.5 rounded-[18px] border border-foyer-border bg-foyer-surface2 p-3 sm:p-3.5">
+          <ol className="space-y-2.5">
+            {HERO_TIMELINE_STEPS.map((step, index) => {
+              const status = statuses[index];
+              const isLastStep = index === HERO_TIMELINE_STEPS.length - 1;
+
+              return (
+                <li key={step.key} className="grid grid-cols-[auto,1fr] gap-4">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={cn(
+                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-500',
+                        nodeStyle(status)
+                      )}
+                    >
+                      {status === 'done' ? (
+                        <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                      ) : status === 'active' ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                      ) : null}
+                    </div>
+                    {!isLastStep && (
+                      <div
+                        className={cn(
+                          'my-1 min-h-[24px] w-0.5 flex-1 transition-all duration-500',
+                          lineStyle(status)
+                        )}
+                      />
+                    )}
+                  </div>
+
+                  <div className={cn('min-w-0', !isLastStep && 'pb-1')}>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="text-[12.5px] font-semibold text-foyer-t1 sm:text-[13px]">{step.title}</p>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-foyer-green">
+                        {step.meta}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11.5px] leading-5 text-foyer-t2">{step.description}</p>
+
+                    {step.key === 'captured' && (
+                      <div className="mt-2 grid grid-cols-2 gap-2 rounded-[14px] border border-foyer-border bg-foyer-surface px-2.5 py-2">
+                        {HERO_APPOINTMENT_DETAILS.map((detail) => (
+                          <div key={detail.label}>
+                            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-foyer-t3">
+                              {detail.label}
+                            </p>
+                            <p className="mt-0.5 text-[11.5px] font-semibold text-foyer-t1">{detail.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {step.key === 'synced' && (
+                      <div className="mt-2 rounded-[14px] border border-foyer-green-b bg-foyer-green-bg px-2.5 py-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-foyer-green">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Synced automatically
+                        </div>
+                        <div className="mt-1 space-y-1">
+                          {HERO_CONFIRMATIONS.map((item) => (
+                            <div key={item} className="flex items-center gap-1.5 text-[11.5px] text-foyer-t2">
+                              <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-foyer-green" />
+                              <span>{item}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function PremiumHero() {
+  return (
+    <section
+      aria-labelledby="hero-heading"
+      className="relative overflow-hidden bg-foyer-bg pb-16 pt-[5.5rem] lg:pb-20 lg:pt-28"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.92),transparent_34%),radial-gradient(circle_at_82%_30%,rgba(21,128,61,0.08),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0)_42%)] dark:bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.06),transparent_38%),radial-gradient(circle_at_82%_30%,rgba(34,197,94,0.08),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0)_42%)]" />
+      <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-b from-transparent to-foyer-surface" />
+
+      <div className="relative mx-auto grid max-w-[1240px] gap-y-12 px-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(400px,0.86fr)] lg:items-center lg:gap-x-24 lg:px-10 xl:gap-x-28 xl:px-14">
+        <div className="max-w-[640px]">
+          <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible">
+            <span className="inline-flex items-center gap-2 rounded-full border border-foyer-green-b/70 bg-foyer-green-bg/70 px-3.5 py-1.5 text-[10px] font-semibold text-foyer-green/90">
+              <LivePulseDot />
+              AI receptionist for clinics and service businesses
+            </span>
+          </motion.div>
+
+          <motion.h1
+            id="hero-heading"
+            custom={1}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mt-5 max-w-[620px] text-[clamp(2.55rem,4vw,4.1rem)] font-extrabold leading-[0.96] tracking-[-0.07em] text-foyer-t1"
+          >
+            <span className="block">Every call answered.</span>
+            <span className="block">Every appointment captured.</span>
+          </motion.h1>
+
+          <motion.p
+            custom={2}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mt-5 max-w-[38rem] text-[15px] leading-7 text-foyer-t2 sm:text-[16px]"
+          >
+            Deploy an AI receptionist in 60 seconds. It answers calls, speaks naturally, books appointments,
+            syncs your calendar, and follows up automatically so your business stops missing calls after hours.
+          </motion.p>
+
+          <motion.div
+            custom={3}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mt-7 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center"
+          >
+            <Link
+              to="/signup"
+              className="inline-flex min-h-[54px] items-center justify-center gap-2.5 rounded-full bg-foyer-t1 px-7 text-[15px] font-semibold text-foyer-surface shadow-[0_16px_36px_rgba(26,25,23,0.16)] transition-transform duration-200 hover:-translate-y-0.5"
+            >
+              Deploy your agent
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <a
+              href="#how-it-works"
+              className="inline-flex min-h-[54px] items-center justify-center rounded-full border border-foyer-border/80 bg-foyer-surface/85 px-7 text-[15px] font-medium text-foyer-t2 transition-colors duration-200 hover:border-foyer-border hover:bg-foyer-surface2 hover:text-foyer-t1"
+            >
+              See how it works
+            </a>
+          </motion.div>
+
+          <motion.ul
+            custom={4}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] font-medium text-foyer-t2/80"
+          >
+            {HERO_REASSURANCE_ITEMS.map((item) => (
+              <li key={item} className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-foyer-t3/70" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </motion.ul>
+        </div>
+
+        <div aria-hidden="true" className="lg:justify-self-end">
+          <div className="relative flex flex-col items-stretch lg:items-end">
+            <HeroWorkflowCard />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 /* ======================================================================== */
 /*  HOW IT WORKS                                                            */
 /* ======================================================================== */
@@ -498,7 +921,7 @@ const HOW_STEPS = [
   { icon: Zap, label: 'Publish', desc: 'Click publish. We deploy instantly to our infrastructure', pill: '~3 seconds' },
   { icon: PhoneCall, label: 'Number live', desc: 'A real phone number is provisioned and ready', pill: '~15 seconds' },
   { icon: CheckCircle2, label: 'Calls handled', desc: 'AI answers every call, books appointments 24/7', pill: '24/7' },
-  { icon: TrendingUp, label: 'Data synced', desc: 'Calendar, email, database — all updated instantly', pill: 'Instant' },
+  { icon: TrendingUp, label: 'Data synced', desc: 'Calendar, email, database - all updated instantly', pill: 'Instant' },
 ];
 
 function HowItWorks() {
@@ -658,7 +1081,7 @@ function Features() {
               <BarChart3 className="h-5 w-5 text-foyer-purple" />
             </div>
             <h3 className="text-card-title text-foyer-t1 mt-4">Real-time analytics</h3>
-            <p className="text-[13.5px] text-foyer-t2 mt-2 leading-relaxed">Track calls, bookings, missed opportunities, and peak hours — updated the moment each call ends.</p>
+            <p className="text-[13.5px] text-foyer-t2 mt-2 leading-relaxed">Track calls, bookings, missed opportunities, and peak hours - updated the moment each call ends.</p>
             {/* Bar chart demo */}
             <div className="mt-5">
               <div className="flex items-end gap-2 h-20">
@@ -703,7 +1126,7 @@ function Features() {
             {/* Email demo */}
             <div className="mt-5 rounded-lg border border-foyer-border bg-foyer-surface2 p-4">
               <p className="text-[10px] text-foyer-t3">FROM: agent@foyer.app &middot; just now</p>
-              <p className="text-sm font-bold text-foyer-t1 mt-1">New booking — Sarah Johnson</p>
+              <p className="text-sm font-bold text-foyer-t1 mt-1">New booking - Sarah Johnson</p>
               <p className="text-xs text-foyer-t2 mt-0.5">Teeth Cleaning &middot; Tue Apr 1 &middot; 2:00 PM</p>
               <div className="flex gap-2 mt-3">
                 <span className="text-[10px] font-semibold text-foyer-green bg-foyer-green-bg border border-foyer-green-b px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -1014,7 +1437,7 @@ export default function Landing() {
   return (
     <div className="bg-foyer-bg">
       <Nav />
-      <Hero />
+      <PremiumHero />
       <HowItWorks />
       <Features />
       <MetricsStrip />
@@ -1025,3 +1448,4 @@ export default function Landing() {
     </div>
   );
 }
+

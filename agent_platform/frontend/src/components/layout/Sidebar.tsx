@@ -88,6 +88,22 @@ export function Sidebar() {
             </TooltipContent>
           </Tooltip>
 
+          {/* Sign out */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={signOut}
+                className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] text-dash-t3 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950 transition-all duration-150"
+                aria-label="Sign out"
+              >
+                <LogOut className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8} className="bg-dash-card border-dash-border text-dash-t1 text-xs font-medium">
+              Sign out
+            </TooltipContent>
+          </Tooltip>
+
           {/* User avatar */}
           <Tooltip>
             <TooltipTrigger asChild>

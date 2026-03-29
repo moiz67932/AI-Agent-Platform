@@ -116,8 +116,8 @@ function Step1Industry() {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">What type of business are you?</h2>
-        <p className="mt-1 text-muted-foreground">We'll customize your agent based on your industry</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">What type of business are you?</h2>
+        <p className="mt-1 text-dash-t3">We'll customize your agent based on your industry</p>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {INDUSTRIES.map(({ type, icon: Icon, label, description }) => (
@@ -130,14 +130,14 @@ function Step1Industry() {
             className={cn(
               'flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-all duration-200',
               data.industry === type
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border hover:border-primary/50 hover:bg-accent'
+                ? 'border-dash-blue bg-dash-blue-bg text-dash-blue'
+                : 'border-dash-border hover:border-dash-blue/50 hover:bg-dash-surface'
             )}
           >
             <Icon className="h-8 w-8" />
             <div>
               <div className="font-semibold text-sm">{label}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{description}</div>
+              <div className="text-xs text-dash-t3 mt-0.5">{description}</div>
             </div>
           </button>
         ))}
@@ -158,20 +158,20 @@ function Step2Business({ onNext }: { onNext: () => void }) {
   return (
     <form onSubmit={handleSubmit((v) => { setBusiness(v); onNext(); })} className="space-y-4">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Business Information</h2>
-        <p className="mt-1 text-muted-foreground">Tell us about your business</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">Business Information</h2>
+        <p className="mt-1 text-dash-t3">Tell us about your business</p>
       </div>
       <div className="grid gap-4">
         <div className="space-y-1.5">
           <Label>Business Name *</Label>
           <Input {...register('name')} placeholder="Bright Smile Dental" />
-          {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+          {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Address</Label>
             <Input {...register('address_line1')} placeholder="123 Main St" />
-            {errors.address_line1 && <p className="text-xs text-destructive">{errors.address_line1.message}</p>}
+            {errors.address_line1 && <p className="text-xs text-red-500">{errors.address_line1.message}</p>}
           </div>
           <div className="space-y-1.5">
             <Label>City</Label>
@@ -241,8 +241,8 @@ function Step3Hours() {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">When are you open?</h2>
-        <p className="mt-1 text-muted-foreground">Set your business hours</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">When are you open?</h2>
+        <p className="mt-1 text-dash-t3">Set your business hours</p>
       </div>
       <div className="flex gap-2 flex-wrap">
         {['Mon-Fri 9-5', 'Mon-Sat 9-6', '24/7'].map((p, i) => (
@@ -255,9 +255,9 @@ function Step3Hours() {
         {DAYS.map((day) => {
           const schedule = hours[day] || { open: false, start: '09:00', end: '17:00' };
           return (
-            <div key={day} className="flex items-center gap-3 rounded-lg border border-border p-3">
+            <div key={day} className="flex items-center gap-3 rounded-lg border border-dash-border p-3">
               <Switch checked={schedule.open} onCheckedChange={(v) => update(day, 'open', v)} />
-              <span className="w-24 font-medium text-sm capitalize">{DAY_LABELS[day]}</span>
+              <span className="w-24 font-medium text-sm capitalize text-dash-t1">{DAY_LABELS[day]}</span>
               {schedule.open ? (
                 <div className="flex items-center gap-2 flex-1">
                   <Input
@@ -266,7 +266,7 @@ function Step3Hours() {
                     onChange={(e) => update(day, 'start', e.target.value)}
                     className="w-32"
                   />
-                  <span className="text-muted-foreground">to</span>
+                  <span className="text-dash-t3">to</span>
                   <Input
                     type="time"
                     value={schedule.end}
@@ -275,7 +275,7 @@ function Step3Hours() {
                   />
                 </div>
               ) : (
-                <span className="text-sm text-muted-foreground">Closed</span>
+                <span className="text-sm text-dash-t3">Closed</span>
               )}
             </div>
           );
@@ -311,12 +311,12 @@ function Step4Services() {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Services & Pricing</h2>
-        <p className="mt-1 text-muted-foreground">What services do you offer?</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">Services & Pricing</h2>
+        <p className="mt-1 text-dash-t3">What services do you offer?</p>
       </div>
       <div className="space-y-2">
         {services.map((svc, i) => (
-          <div key={i} className="flex items-center gap-2 rounded-lg border border-border p-3">
+          <div key={i} className="flex items-center gap-2 rounded-lg border border-dash-border p-3">
             <Switch checked={svc.enabled} onCheckedChange={(v) => update(i, 'enabled', v)} />
             <Input
               value={svc.name}
@@ -333,7 +333,7 @@ function Step4Services() {
               </SelectContent>
             </Select>
             <div className="relative w-24">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dash-t3 text-sm">$</span>
               <Input
                 type="number"
                 value={svc.price || ''}
@@ -343,7 +343,7 @@ function Step4Services() {
               />
             </div>
             <Button variant="ghost" size="icon" onClick={() => remove(i)}>
-              <Trash2 className="h-4 w-4 text-muted-foreground" />
+              <Trash2 className="h-4 w-4 text-dash-t3" />
             </Button>
           </div>
         ))}
@@ -369,8 +369,8 @@ function Step5Agent() {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Design Your AI Agent</h2>
-        <p className="mt-1 text-muted-foreground">Customize your agent's personality and behavior</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">Design Your AI Agent</h2>
+        <p className="mt-1 text-dash-t3">Customize your agent's personality and behavior</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">
@@ -416,7 +416,7 @@ function Step5Agent() {
           <div className="flex items-center justify-between">
             <div>
               <div className="font-medium text-sm">Emergency Routing</div>
-              <div className="text-xs text-muted-foreground">Route urgent calls immediately</div>
+              <div className="text-xs text-dash-t3">Route urgent calls immediately</div>
             </div>
             <Switch checked={agent.emergency_handling} onCheckedChange={(v) => update('emergency_handling', v)} />
           </div>
@@ -431,7 +431,7 @@ function Step5Agent() {
           <div className="flex items-center justify-between">
             <div>
               <div className="font-medium text-sm">Collect Insurance Info</div>
-              <div className="text-xs text-muted-foreground">Ask callers for insurance details</div>
+              <div className="text-xs text-dash-t3">Ask callers for insurance details</div>
             </div>
             <Switch checked={agent.collect_insurance} onCheckedChange={(v) => update('collect_insurance', v)} />
           </div>
@@ -447,12 +447,12 @@ function Step5Agent() {
                 onClick={() => update('voice_id', voice.id)}
                 className={cn(
                   'flex items-center justify-between rounded-lg border p-3 text-left transition-all',
-                  agent.voice_id === voice.id ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'
+                  agent.voice_id === voice.id ? 'border-dash-blue bg-dash-blue-bg' : 'border-dash-border hover:border-dash-blue/50'
                 )}
               >
                 <div>
-                  <div className="font-medium text-sm">{voice.name}</div>
-                  <div className="text-xs text-muted-foreground">{voice.description}</div>
+                  <div className="font-medium text-sm text-dash-t1">{voice.name}</div>
+                  <div className="text-xs text-dash-t3">{voice.description}</div>
                 </div>
                 <Button
                   variant="ghost"
@@ -467,12 +467,12 @@ function Step5Agent() {
           </div>
 
           {/* Preview */}
-          <div className="rounded-xl border border-border bg-muted/30 p-4 mt-4">
-            <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+          <div className="rounded-xl border border-dash-border bg-dash-surface p-4 mt-4">
+            <div className="text-xs text-dash-t3 mb-2 flex items-center gap-1">
               <Mic className="h-3 w-3" /> Live Preview
             </div>
-            <div className="rounded-lg bg-card p-3 text-sm">
-              <span className="text-primary font-medium">{agent.name}:</span>{' '}
+            <div className="rounded-lg bg-dash-card p-3 text-sm">
+              <span className="text-dash-blue font-medium">{agent.name}:</span>{' '}
               {agent.greeting || `Hi, thanks for calling ${data.business.name || 'us'}! This is ${agent.name}, how can I help you today?`}
             </div>
           </div>
@@ -536,8 +536,8 @@ function Step6Knowledge() {
   return (
     <div className="space-y-6" onBlur={save}>
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Teach Your Agent</h2>
-        <p className="mt-1 text-muted-foreground">Add FAQs and information your agent should know</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">Teach Your Agent</h2>
+        <p className="mt-1 text-dash-t3">Add FAQs and information your agent should know</p>
       </div>
       <Tabs defaultValue="quick">
         <TabsList className="w-full">
@@ -548,13 +548,13 @@ function Step6Knowledge() {
 
         <TabsContent value="quick" className="space-y-3 mt-4">
           {suggestions.map((s, i) => (
-            <div key={i} className="rounded-lg border border-border">
+            <div key={i} className="rounded-lg border border-dash-border">
               <div className="flex items-center gap-3 p-3">
                 <Switch checked={enabled[i]} onCheckedChange={(v) => setEnabled((prev) => ({ ...prev, [i]: v }))} />
                 <span className="font-medium text-sm flex-1">{s.q}</span>
               </div>
               {enabled[i] && (
-                <div className="border-t border-border px-3 pb-3">
+                <div className="border-t border-dash-border px-3 pb-3">
                   <Textarea
                     value={answers[i]}
                     onChange={(e) => setAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
@@ -568,10 +568,10 @@ function Step6Knowledge() {
         </TabsContent>
 
         <TabsContent value="upload" className="mt-4">
-          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border p-12 text-center">
-            <Upload className="h-10 w-10 text-muted-foreground mb-3" />
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-dash-border p-12 text-center">
+            <Upload className="h-10 w-10 text-dash-t3 mb-3" />
             <div className="font-medium">Drop files here or click to upload</div>
-            <div className="text-sm text-muted-foreground mt-1">PDF, DOCX, TXT supported</div>
+            <div className="text-sm text-dash-t3 mt-1">PDF, DOCX, TXT supported</div>
             <Button variant="outline" className="mt-4">Browse Files</Button>
           </div>
         </TabsContent>
@@ -583,7 +583,7 @@ function Step6Knowledge() {
               <LinkIcon className="h-4 w-4 mr-2" /> Import
             </Button>
           </div>
-          <p className="text-sm text-muted-foreground">We'll scan your website and extract FAQ content automatically.</p>
+          <p className="text-sm text-dash-t3">We'll scan your website and extract FAQ content automatically.</p>
         </TabsContent>
       </Tabs>
     </div>
@@ -604,13 +604,13 @@ function Step7Phone() {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Connect Your Phone Number</h2>
-        <p className="mt-1 text-muted-foreground">Add a Twilio number for your AI agent</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">Connect Your Phone Number</h2>
+        <p className="mt-1 text-dash-t3">Add a Twilio number for your AI agent</p>
       </div>
 
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground space-y-1.5">
-        <p className="font-medium text-foreground">How phone numbers work</p>
-        <p>1. Purchase a number in your <span className="text-primary">Twilio console</span></p>
+      <div className="rounded-lg border border-dash-border bg-dash-surface p-4 text-sm text-dash-t3 space-y-1.5">
+        <p className="font-medium text-dash-t1">How phone numbers work</p>
+        <p>1. Purchase a number in your <span className="text-dash-blue">Twilio console</span></p>
         <p>2. Point it at your LiveKit SIP trunk in Twilio's settings</p>
         <p>3. Enter it below — your agent will receive calls on this number</p>
         <p className="pt-1 text-xs">You can skip this step and add a number later from the Phone Numbers page.</p>
@@ -626,7 +626,7 @@ function Step7Phone() {
           }}
           placeholder="+12125550100"
         />
-        <p className="text-xs text-muted-foreground">Enter in any format — e.g. (212) 555-0100, 12125550100, +12125550100</p>
+        <p className="text-xs text-dash-t3">Enter in any format — e.g. (212) 555-0100, 12125550100, +12125550100</p>
       </div>
     </div>
   );
@@ -641,8 +641,8 @@ function Step8Review({ onLaunch, launching }: { onLaunch: () => void; launching:
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">You're Almost Live!</h2>
-        <p className="mt-1 text-muted-foreground">Review your configuration before launching</p>
+        <h2 className="text-2xl font-extrabold text-dash-t1">You're Almost Live!</h2>
+        <p className="mt-1 text-dash-t3">Review your configuration before launching</p>
       </div>
       <div className="space-y-3">
         {[
@@ -653,9 +653,9 @@ function Step8Review({ onLaunch, launching }: { onLaunch: () => void; launching:
           { label: 'Knowledge Base', value: `${enabledArticles} articles` },
           { label: 'Phone Number', value: data.phone.number || 'Not selected' },
         ].map((row) => (
-          <div key={row.label} className="flex justify-between rounded-lg border border-border px-4 py-3">
-            <span className="text-sm text-muted-foreground">{row.label}</span>
-            <span className="text-sm font-medium">{row.value}</span>
+          <div key={row.label} className="flex justify-between rounded-lg border border-dash-border px-4 py-3">
+            <span className="text-sm text-dash-t3">{row.label}</span>
+            <span className="text-sm font-medium text-dash-t1">{row.value}</span>
           </div>
         ))}
       </div>
@@ -675,16 +675,16 @@ function SuccessScreen({ phoneNumber }: { phoneNumber: string }) {
       animate={{ opacity: 1, scale: 1 }}
       className="flex flex-col items-center text-center py-8 space-y-6"
     >
-      <div className="rounded-full bg-emerald-500/20 p-6">
-        <CheckCircle2 className="h-16 w-16 text-emerald-500" />
+      <div className="rounded-full bg-dash-green-bg p-6">
+        <CheckCircle2 className="h-16 w-16 text-dash-green" />
       </div>
       <div>
-        <h2 className="text-3xl font-bold">Your agent is live!</h2>
-        <p className="mt-2 text-muted-foreground">Start receiving AI-powered calls right now</p>
+        <h2 className="text-3xl font-bold text-dash-t1">Your agent is live!</h2>
+        <p className="mt-2 text-dash-t3">Start receiving AI-powered calls right now</p>
       </div>
-      <div className="rounded-xl border border-primary/30 bg-primary/5 px-8 py-4">
-        <p className="text-sm text-muted-foreground mb-1">Your phone number</p>
-        <p className="text-2xl font-mono font-bold text-primary">{phoneNumber || '+1 (555) 000-0000'}</p>
+      <div className="rounded-xl border border-dash-blue-b bg-dash-blue-bg px-8 py-4">
+        <p className="text-sm text-dash-t3 mb-1">Your phone number</p>
+        <p className="text-2xl font-mono font-bold text-dash-blue">{phoneNumber || '+1 (555) 000-0000'}</p>
       </div>
       <div className="flex gap-3">
         <Button onClick={() => navigate('/dashboard')}>Go to Dashboard</Button>
@@ -839,7 +839,7 @@ export default function Onboarding() {
 
   if (launched) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="min-h-screen bg-dash-bg flex items-center justify-center p-6">
         <div className="w-full max-w-lg">
           <SuccessScreen phoneNumber={launchedPhone} />
         </div>
@@ -864,13 +864,13 @@ export default function Onboarding() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-dash-bg">
       {/* Top bar */}
-      <div className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 border-b border-dash-border bg-dash-bg/80 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold text-sm">Foyer Setup</span>
-            <button onClick={() => navigate('/dashboard')} className="text-muted-foreground hover:text-foreground">
+            <span className="font-semibold text-sm text-dash-t1">Foyer Setup</span>
+            <button onClick={() => navigate('/dashboard')} className="text-dash-t3 hover:text-dash-t1">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -881,7 +881,7 @@ export default function Onboarding() {
                 key={label}
                 className={cn(
                   'text-xs hidden sm:block',
-                  i + 1 <= step ? 'text-primary' : 'text-muted-foreground'
+                  i + 1 <= step ? 'text-dash-blue' : 'text-dash-t3'
                 )}
               >
                 {label}

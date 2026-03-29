@@ -195,6 +195,21 @@
   to   { stroke-dashoffset: 0; }
 }
 
+@keyframes foyer-float {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-10px); }
+}
+
+@keyframes foyer-float-alt {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -12px, 0); }
+}
+
+@keyframes foyer-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* ================================================================== */
 /*  Utility classes                                                     */
 /* ================================================================== */
