@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, MoreHorizontal, Pause, Play, Trash2, Settings,
-  PhoneCall, ChevronRight, ChevronDown,
+  PhoneCall, ChevronRight, ChevronDown, Loader2,
 } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -30,6 +31,8 @@ function AgentRow({ agent }: { agent: Agent }) {
   const [expanded, setExpanded] = useState(false);
 
   const isLive = agent.status === 'live';
+  const isDeploying = agent.status === 'deploying';
+  const isError = agent.status === 'error';
   const industryLabel = INDUSTRY_LABELS[agent.clinic?.industry || 'generic'];
 
   const handleToggle = (e: React.MouseEvent) => {
@@ -60,13 +63,22 @@ function AgentRow({ agent }: { agent: Agent }) {
             </div>
 
             {/* Status */}
-            <span className={cn(
-              'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border w-fit',
-              isLive ? 'bg-dash-green-bg border-dash-green-b text-dash-green' : 'bg-dash-surface border-dash-border text-dash-t3'
-            )}>
-              {isLive && <span className="w-1.5 h-1.5 rounded-full bg-dash-gdot" />}
-              {isLive ? 'Live' : 'Inactive'}
-            </span>
+            {isDeploying ? (
+              <div className="flex items-center gap-1 text-[10px] font-semibold text-dash-blue w-fit">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>{agent.deploy_progress ?? 0}%</span>
+              </div>
+            ) : (
+              <span className={cn(
+                'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border w-fit',
+                isLive ? 'bg-dash-green-bg border-dash-green-b text-dash-green' :
+                isError ? 'bg-red-50 border-red-200 text-red-600' :
+                'bg-dash-surface border-dash-border text-dash-t3'
+              )}>
+                {isLive && <span className="w-1.5 h-1.5 rounded-full bg-dash-gdot" />}
+                {isLive ? 'Live' : isError ? 'Error' : 'Inactive'}
+              </span>
+            )}
 
             {/* Phone */}
             <span className="text-xs font-mono text-dash-t2 hidden sm:block">
@@ -120,9 +132,18 @@ function AgentRow({ agent }: { agent: Agent }) {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <span className="text-label uppercase text-dash-t3 tracking-widest">Status</span>
-                    <p className={cn('mt-1 text-xs font-semibold', isLive ? 'text-dash-green' : 'text-dash-t3')}>
-                      {isLive ? 'Live & Active' : 'Paused'}
-                    </p>
+                    {isDeploying ? (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-xs font-semibold text-dash-blue flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />Deploying…
+                        </p>
+                        <Progress value={agent.deploy_progress ?? 5} className="h-1" />
+                      </div>
+                    ) : (
+                      <p className={cn('mt-1 text-xs font-semibold', isLive ? 'text-dash-green' : isError ? 'text-red-500' : 'text-dash-t3')}>
+                        {isLive ? 'Live & Active' : isError ? 'Deploy Failed' : 'Paused'}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <span className="text-label uppercase text-dash-t3 tracking-widest">Last Active</span>

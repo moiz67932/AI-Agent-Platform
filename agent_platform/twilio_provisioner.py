@@ -8,7 +8,6 @@ import logging
 import os
 import secrets
 from typing import Any
-from urllib.parse import urlparse
 
 from livekit import api
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -17,6 +16,7 @@ from twilio.rest import Client as TwilioClient
 
 from agent_platform.utils import mask_secret
 from database.db import get_agent, update_agent_fields
+from utils.livekit_config import normalize_livekit_sip_host
 
 logger = logging.getLogger("voice_platform.twilio_provisioner")
 
@@ -30,22 +30,6 @@ def _normalize_config_json(value: Any) -> dict[str, Any]:
         if isinstance(parsed, dict):
             return parsed
     return {}
-
-
-def _derive_livekit_sip_host(livekit_url: str) -> str:
-    """Derive the default LiveKit Cloud SIP endpoint from a WebSocket URL."""
-    raw = (livekit_url or "").strip()
-    if not raw:
-        return ""
-    parsed = urlparse(raw)
-    hostname = (parsed.hostname or raw).strip()
-    if hostname.endswith(".sip.livekit.cloud"):
-        return hostname
-    if hostname.endswith(".livekit.cloud"):
-        project_slug = hostname[: -len(".livekit.cloud")]
-        if project_slug:
-            return f"{project_slug}.sip.livekit.cloud"
-    return ""
 
 
 class TwilioProvisioner:
@@ -71,10 +55,8 @@ class TwilioProvisioner:
         self.livekit_url = livekit_url or os.getenv("LIVEKIT_URL", "")
         self.livekit_api_key = livekit_api_key or os.getenv("LIVEKIT_API_KEY", "")
         self.livekit_api_secret = livekit_api_secret or os.getenv("LIVEKIT_API_SECRET", "")
-        self.livekit_sip_host = (
-            livekit_sip_host
-            or os.getenv("LIVEKIT_SIP_HOST", "")
-            or _derive_livekit_sip_host(self.livekit_url)
+        self.livekit_sip_host = normalize_livekit_sip_host(
+            livekit_sip_host or os.getenv("LIVEKIT_SIP_HOST", "")
         )
 
     def _create_livekit_api(self) -> api.LiveKitAPI:
@@ -194,11 +176,9 @@ class TwilioProvisioner:
 
         sip_auth_username = f"agt-{agent_id.replace('-', '')[:18]}"
         sip_auth_password = secrets.token_urlsafe(24)
-        # With Twilio Programmable Voice -> TwiML -> <Dial><Sip>, LiveKit can authenticate the
-        # inbound SIP INVITE using the username/password from the <Sip> noun alone. Using an
-        # empty numbers list avoids brittle 404 rejections caused by destination-number matching
-        # differences in the Request-URI formatting between providers and LiveKit.
-        trunk_numbers: list[str] = []
+        # LiveKit's Twilio Voice integration expects the inbound trunk to include the same
+        # purchased phone number that appears in the TwiML SIP URI user part.
+        trunk_numbers: list[str] = [phone_number]
         lkapi = self._create_livekit_api()
         try:
             existing_trunk = None
@@ -259,13 +239,9 @@ class TwilioProvisioner:
                 )
             )
 
-            # For Twilio Programmable Voice -> TwiML -> <Dial><Sip>, LiveKit's own quickstart
-            # uses a plain dispatch rule without trunk restrictions. Matching every inbound trunk
-            # in the project avoids brittle 404 failures if LiveKit doesn't associate the incoming
-            # TwiML-originated SIP INVITE with trunk-scoped dispatch matching the same way as a
-            # provider-native trunk flow. We still create only one inbound trunk for this test
-            # number, so broad matching is acceptable here.
-            dispatch_rule_trunk_ids: list[str] = []
+            # Bind the dispatch rule to the specific inbound trunk created for this phone
+            # number so LiveKit doesn't have to infer routing across unrelated trunks.
+            dispatch_rule_trunk_ids: list[str] = [trunk_id]
 
             existing_dispatch_rule = None
             if prefer_existing:

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -7,7 +7,7 @@ import { z } from 'zod';
 import {
   ChevronRight, ChevronLeft, X, Plus, Trash2,
   Building2, Sparkles, Wrench, Droplets, Globe, HelpCircle,
-  Phone, Play, Mic, Upload, Link as LinkIcon, CheckCircle2,
+  Phone, Play, Mic, Upload, Link as LinkIcon,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useAuthStore } from '@/stores/authStore';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 import type { IndustryType, ServiceItem, WorkingHours } from '@/types';
 
@@ -155,6 +155,25 @@ function Step2Business({ onNext }: { onNext: () => void }) {
   });
   const tz = watch('timezone');
 
+  useEffect(() => {
+    const subscription = watch((values) => {
+      setBusiness({
+        name: values.name ?? '',
+        address_line1: values.address_line1 ?? '',
+        city: values.city ?? '',
+        state: values.state ?? '',
+        zip: values.zip ?? '',
+        country: values.country ?? 'US',
+        phone: values.phone ?? '',
+        email: values.email ?? '',
+        website: values.website,
+        timezone: values.timezone ?? 'America/New_York',
+      });
+    });
+
+    return () => subscription.unsubscribe();
+  }, [setBusiness, watch]);
+
   return (
     <form onSubmit={handleSubmit((v) => { setBusiness(v); onNext(); })} className="space-y-4">
       <div className="text-center">
@@ -164,7 +183,7 @@ function Step2Business({ onNext }: { onNext: () => void }) {
       <div className="grid gap-4">
         <div className="space-y-1.5">
           <Label>Business Name *</Label>
-          <Input {...register('name')} placeholder="Bright Smile Dental" />
+          <Input {...register('name')} placeholder="Your Business Name" />
           {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -187,7 +206,7 @@ function Step2Business({ onNext }: { onNext: () => void }) {
           </div>
           <div className="space-y-1.5">
             <Label>Phone</Label>
-            <Input {...register('phone')} placeholder="+1 (555) 000-0000" />
+            <Input {...register('phone')} placeholder="+1 (212) 000-0000" />
           </div>
           <div className="space-y-1.5">
             <Label>Email</Label>
@@ -199,7 +218,7 @@ function Step2Business({ onNext }: { onNext: () => void }) {
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Timezone</Label>
-            <Select value={tz} onValueChange={(v) => setValue('timezone', v)}>
+            <Select value={tz} onValueChange={(v) => setValue('timezone', v, { shouldDirty: true, shouldTouch: true })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {TIMEZONES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
@@ -376,7 +395,7 @@ function Step5Agent() {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Agent Name</Label>
-            <Input value={agent.name} onChange={(e) => update('name', e.target.value)} placeholder="Sarah" />
+            <Input value={agent.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Alex" />
           </div>
           <div className="space-y-1.5">
             <Label>Agent Role</Label>
@@ -394,7 +413,7 @@ function Step5Agent() {
             <Textarea
               value={agent.greeting}
               onChange={(e) => update('greeting', e.target.value)}
-              placeholder={`Hi, thanks for calling ${data.business.name || '[Business Name]'}! This is ${agent.name}, how can I help you today?`}
+              placeholder={`Hi, thanks for calling ${data.business.name || 'us'}! ${agent.name ? `This is ${agent.name}, how` : 'How'} can I help you today?`}
               rows={3}
             />
           </div>
@@ -666,42 +685,13 @@ function Step8Review({ onLaunch, launching }: { onLaunch: () => void; launching:
   );
 }
 
-// ─── Success Screen ──────────────────────────────────────────────────────────
-function SuccessScreen({ phoneNumber }: { phoneNumber: string }) {
-  const navigate = useNavigate();
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col items-center text-center py-8 space-y-6"
-    >
-      <div className="rounded-full bg-dash-green-bg p-6">
-        <CheckCircle2 className="h-16 w-16 text-dash-green" />
-      </div>
-      <div>
-        <h2 className="text-3xl font-bold text-dash-t1">Your agent is live!</h2>
-        <p className="mt-2 text-dash-t3">Start receiving AI-powered calls right now</p>
-      </div>
-      <div className="rounded-xl border border-dash-blue-b bg-dash-blue-bg px-8 py-4">
-        <p className="text-sm text-dash-t3 mb-1">Your phone number</p>
-        <p className="text-2xl font-mono font-bold text-dash-blue">{phoneNumber || '+1 (555) 000-0000'}</p>
-      </div>
-      <div className="flex gap-3">
-        <Button onClick={() => navigate('/dashboard')}>Go to Dashboard</Button>
-        <Button variant="outline" onClick={() => navigate('/agents')}>View Agent</Button>
-      </div>
-    </motion.div>
-  );
-}
 
 // ─── Main Onboarding ─────────────────────────────────────────────────────────
 export default function Onboarding() {
   const navigate = useNavigate();
   const { step, setStep, data, reset } = useOnboardingStore();
-  const { user, org, setOrg, signOut } = useAuthStore();
+  const { user, signOut } = useAuthStore();
   const [launching, setLaunching] = useState(false);
-  const [launched, setLaunched] = useState(false);
-  const [launchedPhone, setLaunchedPhone] = useState('');
 
   const prev = () => setStep(Math.max(1, step - 1));
   const next = () => setStep(Math.min(TOTAL_STEPS, step + 1));
@@ -710,125 +700,53 @@ export default function Onboarding() {
   const launch = async () => {
     setLaunching(true);
     try {
-      const userId = user?.id;
-      if (!userId) throw new Error('Not authenticated');
+      if (!user?.id) throw new Error('Not authenticated');
 
-      // 1. Create or get organization
-      let orgId = org?.id;
-      if (!orgId) {
-        const { data: newOrg, error: orgError } = await supabase
-          .from('organizations')
-          .insert({ name: data.business.name, owner_id: userId })
-          .select()
-          .single();
-        if (orgError) throw orgError;
-        orgId = newOrg.id;
-        setOrg(newOrg);
-      }
-
-      // 2. Create clinic
       const workingHours = Object.entries(data.hours).reduce<Record<string, object>>((acc, [day, sched]) => {
         if (sched.open) acc[day] = { start: sched.start, end: sched.end, open: true };
         return acc;
       }, {});
 
-      const { data: clinic, error: clinicError } = await supabase
-        .from('clinics')
-        .insert({
-          organization_id: orgId,
-          name: data.business.name,
+      const result = await api.post<{ data: { agent_id: string; clinic_id: string; organization_id: string; phone_number?: string } }>(
+        '/api/onboarding/complete',
+        {
           industry: data.industry,
-          timezone: data.business.timezone,
-          phone: data.business.phone,
-          email: data.business.email,
-          address_line1: data.business.address_line1,
-          city: data.business.city,
-          state: data.business.state,
-          zip: data.business.zip,
-          country: data.business.country,
-          website: data.business.website,
-          working_hours: workingHours,
-        })
-        .select()
-        .single();
-      if (clinicError) throw clinicError;
-
-      // 3. Create agent
-      const { data: agent, error: agentError } = await supabase
-        .from('agents')
-        .insert({
-          organization_id: orgId,
-          clinic_id: clinic.id,
-          name: data.agent.name,
-          status: 'live',
-          default_language: 'en',
-        })
-        .select()
-        .single();
-      if (agentError) throw agentError;
-
-      // 4. Create agent_settings
-      const treatmentDurations = Object.fromEntries(data.services.map((s) => [s.name, s.duration]));
-      const { error: settingsError } = await supabase
-        .from('agent_settings')
-        .insert({
-          organization_id: orgId,
-          agent_id: agent.id,
-          greeting_text: data.agent.greeting || `Hi, thanks for calling ${data.business.name}! This is ${data.agent.name}, how can I help?`,
-          persona_tone: data.agent.tone,
-          voice_id: data.agent.voice_id,
-          config_json: {
-            treatment_durations: treatmentDurations,
-            services: data.services,
+          businessInfo: {
+            name: data.business.name,
+            address_line1: data.business.address_line1,
+            city: data.business.city,
+            state: data.business.state,
+            zip: data.business.zip,
+            country: data.business.country || 'US',
+            phone: data.business.phone,
+            email: data.business.email,
+            website: data.business.website,
+            timezone: data.business.timezone,
+          },
+          hours: workingHours,
+          services: data.services,
+          agentConfig: {
+            name: data.agent.name,
+            role: data.agent.role,
+            greeting: data.agent.greeting || `Hi, thanks for calling ${data.business.name}! This is ${data.agent.name}, how can I help?`,
+            tone: data.agent.tone,
+            voice_id: data.agent.voice_id,
             emergency_handling: data.agent.emergency_handling,
             emergency_script: data.agent.emergency_script,
             collect_insurance: data.agent.collect_insurance,
             cancellation_policy: data.agent.cancellation_policy,
             custom_instructions: data.agent.custom_instructions,
-            agent_role: data.agent.role,
+            language: 'en',
           },
-        });
-      if (settingsError) throw settingsError;
+          knowledgeBase: { articles: data.knowledge.articles },
+          phoneNumber: data.phone.number ? { number: data.phone.number } : null,
+        },
+      );
 
-      // 5. Create knowledge articles
-      if (data.knowledge.articles.length > 0) {
-        const articles = data.knowledge.articles.map((a) => ({
-          organization_id: orgId,
-          clinic_id: clinic.id,
-          title: a.title,
-          body: a.body,
-          category: a.category,
-          status: 'active',
-        }));
-        await supabase.from('knowledge_articles').insert(articles);
-      }
-
-      // 6. Assign phone number (optional — skip if not provided)
-      const rawPhone = data.phone.number?.trim();
-      if (rawPhone) {
-        const digits = rawPhone.replace(/\D/g, '');
-        let e164 = rawPhone;
-        if (digits.length === 10) e164 = `+1${digits}`;
-        else if (digits.length === 11 && digits.startsWith('1')) e164 = `+${digits}`;
-        else if (digits.length > 0) e164 = `+${digits}`;
-
-        const { error: phoneError } = await supabase.from('phone_numbers').insert({
-          organization_id: orgId,
-          clinic_id: clinic.id,
-          agent_id: agent.id,
-          phone_number: e164,
-          phone_e164: e164,
-          status: 'active',
-          monthly_cost: 0,
-        });
-        // Non-fatal: phone insert failure doesn't block launch
-        if (phoneError) console.warn('Phone insert failed:', phoneError.message);
-      }
-
-      setLaunchedPhone(rawPhone || '');
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       reset();
-      setLaunched(true);
+      // Navigate immediately — agent page will show the deploy progress
+      navigate(`/agents/${result.data.agent_id}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : (err as { message?: string })?.message || String(err);
       toast({ title: 'Launch failed', description: msg, variant: 'destructive' });
@@ -836,16 +754,6 @@ export default function Onboarding() {
       setLaunching(false);
     }
   };
-
-  if (launched) {
-    return (
-      <div className="min-h-screen bg-dash-bg flex items-center justify-center p-6">
-        <div className="w-full max-w-lg">
-          <SuccessScreen phoneNumber={launchedPhone} />
-        </div>
-      </div>
-    );
-  }
 
   const stepComponents: Record<number, React.ReactNode> = {
     1: <Step1Industry />,

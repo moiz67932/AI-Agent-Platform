@@ -35,6 +35,10 @@ docker compose version
 echo "==> Installing Certbot..."
 sudo apt install -y certbot
 
+# 4b. Install media runtime libraries needed by the LiveKit worker
+echo "==> Installing media runtime libraries..."
+sudo apt install -y libva2 libva-drm2 va-driver-all
+
 # 5. Configure firewall (UFW)
 echo "==> Configuring firewall..."
 sudo apt install -y ufw

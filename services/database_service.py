@@ -124,8 +124,12 @@ async def fetch_clinic_context_optimized(
         logger.debug(f"[DB] Looking up phone: raw='{called_number}', last10='{last10}'")
 
         # STRATEGY 1: Search phone_numbers table with suffix match
+        # Prefer the record that matches this agent's AGENT_ID env var to avoid
+        # picking the wrong clinic when multiple rows share the same phone number.
+        _env_agent_id = os.getenv("AGENT_ID", "").strip() or None
+
         def _query_phone_numbers():
-            q = supabase.table("phone_numbers").select(
+            select_fields = (
                 "clinic_id, agent_id, "
                 "clinics:clinic_id("
                 "  id, organization_id, name, timezone, default_phone_region, "
@@ -138,6 +142,18 @@ async def fetch_clinic_context_optimized(
                 "    google_oauth_token)"
                 ")"
             )
+            # Try exact agent_id match first (avoids duplicate phone number ambiguity)
+            if _env_agent_id:
+                q_exact = supabase.table("phone_numbers").select(select_fields)
+                if last10:
+                    q_exact = q_exact.ilike("phone_e164", f"%{last10}")
+                else:
+                    q_exact = q_exact.eq("phone_e164", called_number)
+                q_exact = q_exact.eq("agent_id", _env_agent_id).limit(1).execute()
+                if q_exact.data:
+                    return q_exact
+            # Fallback: any matching phone record
+            q = supabase.table("phone_numbers").select(select_fields)
             if last10:
                 q = q.ilike("phone_e164", f"%{last10}")
             else:

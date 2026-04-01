@@ -102,43 +102,17 @@ function AgentChip({ name, live }: { name: string; live?: boolean }) {
 }
 
 /* ── Service pipeline cell ── */
-const SERVICE_COLORS: Record<string, { bg: string; text: string }> = {
-  'Teeth cleaning': { bg: 'bg-dash-blue-bg', text: 'text-dash-blue' },
-  'HydraFacial': { bg: 'bg-dash-pink-bg', text: 'text-dash-pink' },
-  'Consultation': { bg: 'bg-dash-green-bg', text: 'text-dash-green' },
-  'Whitening': { bg: 'bg-dash-amber-bg', text: 'text-dash-amber' },
-};
-
-const PIPELINE_DATA = [
-  { service: 'Teeth cleaning', data: [8, 12, 6, 14, 10, 4] },
-  { service: 'HydraFacial', data: [5, 8, 3, 9, 7, 6] },
-  { service: 'Consultation', data: [3, 6, 4, 8, 5, 2] },
-  { service: 'Whitening', data: [2, 4, 2, 6, 3, 1] },
-];
-
-/* ── Recent calls sample ── */
-const SAMPLE_CALLS = [
-  { name: 'Sarah Johnson', phone: '***-0142', agent: 'Bright Smile', outcome: 'booked', duration: '2m 14s', time: '2m ago', initials: 'SJ', color: 'bg-purple-500' },
-  { name: 'Marcus Webb', phone: '***-0198', agent: 'Serenity Spa', outcome: 'booked', duration: '1m 52s', time: '18m ago', initials: 'MW', color: 'bg-blue-500' },
-  { name: 'Linda Park', phone: '***-0177', agent: 'City Ortho', outcome: 'info', duration: '0m 58s', time: '34m ago', initials: 'LP', color: 'bg-emerald-500' },
-  { name: 'David Kim', phone: '***-0231', agent: 'Bright Smile', outcome: 'missed', duration: '\u2014', time: '1hr ago', initials: 'DK', color: 'bg-amber-500' },
-];
-
-const AGENTS_LIST = [
-  { name: 'Bright Smile Dental', phone: '+1 (310) 555-0142', calls: 14 },
-  { name: 'Serenity Med Spa', phone: '+1 (424) 555-0198', calls: 7 },
-  { name: 'City Ortho Clinic', phone: '+1 (213) 555-0177', calls: 3 },
-];
-
-const UPCOMING = [
-  { time: '2:00', period: 'PM', name: 'Sarah Johnson', service: 'Teeth cleaning', agent: 'Bright Smile' },
-  { time: '3:30', period: 'PM', name: 'Marcus Webb', service: 'HydraFacial', agent: 'Serenity Spa' },
-  { time: '4:15', period: 'PM', name: 'Linda Park', service: 'Consultation', agent: 'City Ortho' },
+const PIPELINE_COLORS = [
+  { bg: 'bg-dash-blue-bg', text: 'text-dash-blue' },
+  { bg: 'bg-dash-pink-bg', text: 'text-dash-pink' },
+  { bg: 'bg-dash-green-bg', text: 'text-dash-green' },
+  { bg: 'bg-dash-amber-bg', text: 'text-dash-amber' },
 ];
 
 export default function Dashboard() {
   const { user } = useAuthStore();
   const todayRange = getTodayRange();
+  const weekRange = getDateRange(6);
 
   useRealtimeSync(user?.organization_id ?? null);
 
@@ -147,6 +121,10 @@ export default function Dashboard() {
   const { data: todayAnalytics, isLoading: analyticsLoading } = useAnalytics({
     start_date: todayRange.start,
     end_date: todayRange.end,
+  });
+  const { data: weekAnalytics } = useAnalytics({
+    start_date: weekRange.start,
+    end_date: weekRange.end,
   });
   const { data: todayAppointments } = useAppointments({
     start_date: todayRange.start,
@@ -157,8 +135,10 @@ export default function Dashboard() {
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const liveAgents = (agents || []).filter(a => a.status === 'live').length;
 
-  // Use real data when available, otherwise show sample data
   const hasCalls = recentCalls?.data?.length;
+  const weekTotalCalls = weekAnalytics?.total_calls ?? 0;
+  const weekBooked = weekAnalytics?.total_bookings ?? 0;
+  const weekRate = weekTotalCalls > 0 ? Math.round((weekBooked / weekTotalCalls) * 100) : 0;
 
   return (
     <div className="space-y-5">
@@ -169,7 +149,8 @@ export default function Dashboard() {
             {greeting}, {user?.full_name?.split(' ')[0] || 'there'}
           </h1>
           <p className="text-xs text-dash-t3 mt-0.5">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} &middot; All {liveAgents || 3} agents running
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            {liveAgents > 0 && <> &middot; {liveAgents} agent{liveAgents !== 1 ? 's' : ''} live</>}
           </p>
         </div>
         <span className="text-xs text-dash-t2 border border-dash-border bg-dash-card rounded-lg px-3 py-1.5 font-medium">
@@ -181,8 +162,8 @@ export default function Dashboard() {
       <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           label="Total calls today"
-          value={`+${todayAnalytics?.total_calls ?? 24}`}
-          trend={`\u2191 12% vs yesterday`}
+          value={todayAnalytics?.total_calls ?? 0}
+          trend={todayAnalytics?.total_calls ? `${todayAnalytics.total_calls} call${todayAnalytics.total_calls !== 1 ? 's' : ''} today` : 'No calls yet today'}
           barData={[30, 45, 55, 40, 60, 80, 95]}
           barColor="text-dash-blue"
           icon={Phone}
@@ -190,8 +171,8 @@ export default function Dashboard() {
         />
         <MetricCard
           label="Appointments booked"
-          value={`+${todayAnalytics?.total_bookings ?? 9}`}
-          trend={`\u2191 3 since yesterday`}
+          value={todayAnalytics?.total_bookings ?? 0}
+          trend={todayAnalytics?.total_bookings ? `${todayAnalytics.total_bookings} booked today` : 'No bookings yet today'}
           barData={[40, 55, 30, 70, 50, 80, 90]}
           barColor="text-dash-green"
           icon={Calendar}
@@ -199,8 +180,8 @@ export default function Dashboard() {
         />
         <MetricCard
           label="Booking rate"
-          value="+38%"
-          trend={`\u2191 4pp this week`}
+          value={todayAnalytics?.total_calls ? `${Math.round(((todayAnalytics.total_bookings ?? 0) / todayAnalytics.total_calls) * 100)}%` : '—'}
+          trend={todayAnalytics?.total_calls ? 'Based on today\'s calls' : 'No calls yet today'}
           barData={[45, 50, 35, 65, 55, 75, 85]}
           barColor="text-dash-pink"
           icon={TrendingUp}
@@ -238,9 +219,11 @@ export default function Dashboard() {
           <div className="flex items-center justify-between px-5 py-3 border-b border-dash-border">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-dash-t1">Recent calls</h3>
-              <span className="text-[10px] font-semibold text-dash-blue bg-dash-blue-bg border border-dash-blue-b px-2 py-0.5 rounded-full">
-                {hasCalls ? recentCalls.data.length : 24} today
-              </span>
+              {hasCalls ? (
+                <span className="text-[10px] font-semibold text-dash-blue bg-dash-blue-bg border border-dash-blue-b px-2 py-0.5 rounded-full">
+                  {recentCalls.data.length} today
+                </span>
+              ) : null}
             </div>
             <Link to="/calls" className="text-xs text-dash-t3 hover:text-dash-blue transition-colors flex items-center gap-1 font-medium">
               View all <ArrowRight className="h-3 w-3" />
@@ -253,37 +236,45 @@ export default function Dashboard() {
             ))}
           </div>
           {/* Rows */}
-          {(hasCalls ? recentCalls.data.slice(0, 4) : SAMPLE_CALLS).map((call: any, i: number) => {
-            const name = call.patient_name || call.name || (call.caller_number ? maskPhone(call.caller_number) : 'Unknown');
-            const agentName = call.agent?.name || call.agent || '';
-            const outcome = call.outcome || 'info';
-            const dur = call.duration_seconds ? formatDuration(call.duration_seconds) : (call.duration || '\u2014');
-            const t = call.started_at ? relativeTime(call.started_at) : (call.time || '');
-            const init = call.initials || name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
-            const clr = call.color || ['bg-purple-500','bg-blue-500','bg-emerald-500','bg-amber-500'][i % 4];
+          {callsLoading ? (
+            <div className="px-5 py-8 text-center text-sm text-dash-t3">Loading…</div>
+          ) : !hasCalls ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-medium text-dash-t2">No calls yet</p>
+              <p className="text-xs text-dash-t3 mt-1">Calls will appear here once your agents start receiving them</p>
+            </div>
+          ) : (
+            recentCalls.data.slice(0, 4).map((call: any, i: number) => {
+              const name = call.patient_name || (call.caller_number ? maskPhone(call.caller_number) : 'Unknown');
+              const agentName = call.agent?.name || '';
+              const outcome = call.outcome || 'info';
+              const dur = call.duration_seconds ? formatDuration(call.duration_seconds) : '\u2014';
+              const t = call.started_at ? relativeTime(call.started_at) : '';
+              const init = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+              const clr = ['bg-purple-500','bg-blue-500','bg-emerald-500','bg-amber-500'][i % 4];
 
-            return (
-              <Link
-                key={i}
-                to={call.id ? `/calls/${call.id}` : '/calls'}
-                className="foyer-row-hover grid grid-cols-[1fr_100px_80px_70px_60px] gap-2 px-5 py-2.5 items-center border-b border-dash-border last:border-0 hover:bg-dash-surface transition-colors"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0', clr)}>
-                    {init}
+              return (
+                <Link
+                  key={i}
+                  to={call.id ? `/calls/${call.id}` : '/calls'}
+                  className="foyer-row-hover grid grid-cols-[1fr_100px_80px_70px_60px] gap-2 px-5 py-2.5 items-center border-b border-dash-border last:border-0 hover:bg-dash-surface transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0', clr)}>
+                      {init}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-dash-t1 truncate">{name}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-dash-t1 truncate">{name}</p>
-                    <p className="text-[10px] font-mono text-dash-t3">{call.phone || ''}</p>
-                  </div>
-                </div>
-                <AgentChip name={agentName} live />
-                <OutcomeDot outcome={outcome} />
-                <span className="text-xs font-mono text-dash-t2">{dur}</span>
-                <span className="text-[10px] text-dash-t3">{t}</span>
-              </Link>
-            );
-          })}
+                  <AgentChip name={agentName} live />
+                  <OutcomeDot outcome={outcome} />
+                  <span className="text-xs font-mono text-dash-t2">{dur}</span>
+                  <span className="text-[10px] text-dash-t3">{t}</span>
+                </Link>
+              );
+            })
+          )}
         </div>
 
         {/* Right panel */}
@@ -293,28 +284,33 @@ export default function Dashboard() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-dash-border">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-dash-t1">Active agents</h3>
-                <span className="text-[10px] font-semibold text-dash-green bg-dash-green-bg border border-dash-green-b px-2 py-0.5 rounded-full">
-                  {liveAgents || 3} live
-                </span>
+                {liveAgents > 0 && (
+                  <span className="text-[10px] font-semibold text-dash-green bg-dash-green-bg border border-dash-green-b px-2 py-0.5 rounded-full">
+                    {liveAgents} live
+                  </span>
+                )}
               </div>
               <Link to="/agents" className="text-[10px] text-dash-t3 hover:text-dash-blue transition-colors font-medium">Manage</Link>
             </div>
             <div className="px-4 py-3 space-y-3">
-              {AGENTS_LIST.map(a => (
-                <div key={a.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-[6px] w-[6px]">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-dash-gdot opacity-50 animate-ping" />
-                      <span className="relative inline-flex h-[6px] w-[6px] rounded-full bg-dash-gdot" />
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold text-dash-t1">{a.name}</p>
-                      <p className="text-[10px] font-mono text-dash-t3">{a.phone}</p>
+              {liveAgents === 0 ? (
+                <p className="text-xs text-dash-t3 text-center py-2">No live agents yet</p>
+              ) : (
+                (agents || []).filter(a => a.status === 'live').map((a: any) => (
+                  <div key={a.id} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-[6px] w-[6px]">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-dash-gdot opacity-50 animate-ping" />
+                        <span className="relative inline-flex h-[6px] w-[6px] rounded-full bg-dash-gdot" />
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold text-dash-t1">{a.name}</p>
+                        {a.phone_number && <p className="text-[10px] font-mono text-dash-t3">{a.phone_number}</p>}
+                      </div>
                     </div>
                   </div>
-                  <span className="text-sm font-bold text-dash-blue">{a.calls}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
             {/* Mini week chart */}
             <div className="px-4 py-3 border-t border-dash-border">
@@ -333,15 +329,15 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center justify-between mt-3 pt-2 border-t border-dash-border">
                 <div>
-                  <span className="text-lg font-extrabold text-dash-t1">142</span>
+                  <span className="text-lg font-extrabold text-dash-t1">{weekTotalCalls}</span>
                   <p className="text-[9px] text-dash-t3">Total calls</p>
                 </div>
                 <div>
-                  <span className="text-lg font-extrabold text-dash-green">58</span>
+                  <span className="text-lg font-extrabold text-dash-green">{weekBooked}</span>
                   <p className="text-[9px] text-dash-t3">Booked</p>
                 </div>
                 <div>
-                  <span className="text-lg font-extrabold text-dash-t1">41%</span>
+                  <span className="text-lg font-extrabold text-dash-t1">{weekTotalCalls > 0 ? `${weekRate}%` : '—'}</span>
                   <p className="text-[9px] text-dash-t3">Rate</p>
                 </div>
               </div>
@@ -355,23 +351,28 @@ export default function Dashboard() {
               <Link to="/calendar" className="text-[10px] text-dash-t3 hover:text-dash-blue transition-colors font-medium">All &rarr;</Link>
             </div>
             <div className="px-4 py-3 space-y-3">
-              {UPCOMING.map(u => (
-                <div key={u.name} className="flex items-start gap-3">
-                  <div className="text-right w-10 shrink-0">
-                    <p className="text-sm font-extrabold text-dash-t1">{u.time}</p>
-                    <p className="text-[9px] text-dash-t3">{u.period}</p>
-                  </div>
-                  <div className="w-px bg-dash-border self-stretch" />
-                  <div>
-                    <p className="text-xs font-semibold text-dash-t1">{u.name}</p>
-                    <p className="text-[10px] text-dash-t3">{u.service}</p>
-                    <span className="inline-flex items-center gap-1 mt-0.5 text-[9px] font-medium text-dash-green">
-                      <span className="w-1 h-1 rounded-full bg-dash-gdot" />
-                      {u.agent}
-                    </span>
-                  </div>
-                </div>
-              ))}
+              {!todayAppointments?.length ? (
+                <p className="text-xs text-dash-t3 text-center py-2">No appointments scheduled today</p>
+              ) : (
+                todayAppointments.slice(0, 3).map((u: any) => {
+                  const apptDate = u.appointment_at ? new Date(u.appointment_at) : null;
+                  const timeStr = apptDate ? apptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }) : '';
+                  const period = apptDate ? (apptDate.getHours() < 12 ? 'AM' : 'PM') : '';
+                  return (
+                    <div key={u.id} className="flex items-start gap-3">
+                      <div className="text-right w-10 shrink-0">
+                        <p className="text-sm font-extrabold text-dash-t1">{timeStr}</p>
+                        <p className="text-[9px] text-dash-t3">{period}</p>
+                      </div>
+                      <div className="w-px bg-dash-border self-stretch" />
+                      <div>
+                        <p className="text-xs font-semibold text-dash-t1">{u.patient_name || u.caller_name || 'Unknown'}</p>
+                        {u.service_requested && <p className="text-[10px] text-dash-t3">{u.service_requested}</p>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -386,35 +387,42 @@ export default function Dashboard() {
           </div>
           <Link to="/analytics" className="text-[10px] text-dash-t3 hover:text-dash-blue transition-colors font-medium">Analytics &rarr;</Link>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-dash-surface border-b border-dash-border">
-                <th className="text-label uppercase text-dash-t3 tracking-widest px-5 py-2.5 font-semibold">Service</th>
-                {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                  <th key={d} className="text-label uppercase text-dash-t3 tracking-widest px-4 py-2.5 font-semibold text-center">{d}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {PIPELINE_DATA.map(row => {
-                const colors = SERVICE_COLORS[row.service] || { bg: 'bg-dash-blue-bg', text: 'text-dash-blue' };
-                return (
-                  <tr key={row.service} className="border-b border-dash-border last:border-0">
-                    <td className="px-5 py-2.5 text-sm font-medium text-dash-t1">{row.service}</td>
-                    {row.data.map((val, i) => (
-                      <td key={i} className="px-4 py-2.5 text-center">
-                        <span className={cn('inline-block text-xs font-bold px-2.5 py-1 rounded-md', colors.bg, colors.text)}>
-                          {val}
-                        </span>
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {weekAnalytics?.services_by_day && weekAnalytics.services_by_day.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-dash-surface border-b border-dash-border">
+                  <th className="text-label uppercase text-dash-t3 tracking-widest px-5 py-2.5 font-semibold">Service</th>
+                  {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                    <th key={d} className="text-label uppercase text-dash-t3 tracking-widest px-4 py-2.5 font-semibold text-center">{d}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {weekAnalytics.services_by_day.map((row: any, idx: number) => {
+                  const colors = PIPELINE_COLORS[idx % PIPELINE_COLORS.length];
+                  return (
+                    <tr key={row.service} className="border-b border-dash-border last:border-0">
+                      <td className="px-5 py-2.5 text-sm font-medium text-dash-t1">{row.service}</td>
+                      {row.data.map((val: number, i: number) => (
+                        <td key={i} className="px-4 py-2.5 text-center">
+                          <span className={cn('inline-block text-xs font-bold px-2.5 py-1 rounded-md', colors.bg, colors.text)}>
+                            {val}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm font-medium text-dash-t2">No service data yet</p>
+            <p className="text-xs text-dash-t3 mt-1">Service bookings will appear here as your agents handle calls</p>
+          </div>
+        )}
       </div>
     </div>
   );

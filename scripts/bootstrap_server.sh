@@ -20,6 +20,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   python3 python3-pip python3-venv python3-dev \
   nginx supervisor git curl wget ufw \
   build-essential libssl-dev libffi-dev \
+  libva2 libva-drm2 va-driver-all \
   certbot python3-certbot-nginx \
   net-tools lsof htop
 echo "  OK: Packages installed"

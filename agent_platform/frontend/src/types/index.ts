@@ -63,7 +63,9 @@ export interface Agent {
   organization_id: string;
   clinic_id: string;
   name: string;
-  status: 'live' | 'paused' | 'draft';
+  status: 'live' | 'paused' | 'draft' | 'deploying' | 'error' | 'offline';
+  deploy_error?: string | null;
+  deploy_progress?: number | null;
   default_language: string;
   created_at: string;
   updated_at: string;

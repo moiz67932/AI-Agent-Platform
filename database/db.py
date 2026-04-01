@@ -179,6 +179,43 @@ async def get_agent(agent_id: str, connection: asyncpg.Connection | None = None)
         return _record(await conn.fetchrow(query, agent_id))
 
 
+async def get_agent_with_clinic(agent_id: str) -> DatabaseRecord | None:
+    """Fetch an agent row joined with its clinic data.
+
+    Params:
+        agent_id: Agent UUID string.
+    Returns:
+        Agent row merged with clinic fields, or None if not found.
+    """
+    query = """
+        SELECT
+            a.*,
+            c.industry         AS clinic_industry,
+            c.timezone         AS clinic_timezone,
+            c.working_hours    AS clinic_working_hours,
+            c.name             AS clinic_name,
+            c.country          AS clinic_country,
+            c.phone            AS clinic_phone,
+            c.email            AS clinic_email,
+            c.address_line1    AS clinic_address_line1,
+            c.city             AS clinic_city,
+            c.state            AS clinic_state,
+            c.zip              AS clinic_zip,
+            s.greeting_text    AS greeting_text,
+            s.persona_tone     AS persona_tone,
+            s.voice_id         AS voice_id,
+            s.config_json      AS settings_config_json
+        FROM agents a
+        LEFT JOIN clinics c ON c.id = a.clinic_id
+        LEFT JOIN agent_settings s ON s.agent_id = a.id
+        WHERE a.id = $1
+    """
+    pool = get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, agent_id)
+        return _record(row)
+
+
 async def update_agent_fields(
     agent_id: str,
     fields: dict[str, Any],

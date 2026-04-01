@@ -9,15 +9,16 @@ import os
 import pathlib
 import posixpath
 import shlex
+import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import aiohttp
 import paramiko
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from agent_platform.utils import mask_secret
+from utils.livekit_config import normalize_livekit_sip_host
 
 logger = logging.getLogger("voice_platform.server_manager")
 
@@ -66,22 +67,6 @@ def load_ssh_key(key_path: str) -> paramiko.PKey:
         "Tried Ed25519, RSA, and ECDSA formats.\n"
         "Verify the file is a valid SSH private key (not .pub)."
     )
-
-
-def derive_livekit_sip_host(livekit_url: str) -> str:
-    """Derive the default LiveKit Cloud SIP endpoint from a WebSocket URL."""
-    raw = (livekit_url or "").strip()
-    if not raw:
-        return ""
-    parsed = urlparse(raw)
-    hostname = (parsed.hostname or raw).strip()
-    if hostname.endswith(".sip.livekit.cloud"):
-        return hostname
-    if hostname.endswith(".livekit.cloud"):
-        project_slug = hostname[: -len(".livekit.cloud")]
-        if project_slug:
-            return f"{project_slug}.sip.livekit.cloud"
-    return ""
 
 
 class AgentServerManager:
@@ -174,7 +159,7 @@ class AgentServerManager:
             "LIVEKIT_AGENT_NAME": livekit_agent_name,
             "LIVEKIT_API_KEY": os.getenv("LIVEKIT_API_KEY", ""),
             "LIVEKIT_API_SECRET": os.getenv("LIVEKIT_API_SECRET", ""),
-            "LIVEKIT_SIP_HOST": os.getenv("LIVEKIT_SIP_HOST", "") or derive_livekit_sip_host(os.getenv("LIVEKIT_URL", "")),
+            "LIVEKIT_SIP_HOST": normalize_livekit_sip_host(os.getenv("LIVEKIT_SIP_HOST", "")),
             "LIVEKIT_URL": os.getenv("LIVEKIT_URL", ""),
             "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
             "PORT": str(port),
@@ -370,6 +355,34 @@ server {{
         finally:
             sftp.close()
 
+    def _read_remote_env(self, client: paramiko.SSHClient, agent_id: str) -> dict[str, str]:
+        """Read and parse the remote `.env` file for a deployment."""
+        remote_dir = self._remote_dir(agent_id)
+        sftp = client.open_sftp()
+        try:
+            with sftp.open(posixpath.join(remote_dir, ".env"), "r") as handle:
+                content = handle.read().decode("utf-8")
+        finally:
+            sftp.close()
+        return self._parse_env_content(content)
+
+    @staticmethod
+    def _parse_env_content(content: str) -> dict[str, str]:
+        """Parse a simple dotenv file produced by `_render_env_file`."""
+        parsed: dict[str, str] = {}
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, sep, raw_value = line.partition("=")
+            if not sep:
+                continue
+            value = raw_value
+            if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+                value = value[1:-1].replace("\\\\", "\\").replace('\\"', '"')
+            parsed[key] = value
+        return parsed
+
     async def sync_agent_env(self, agent_id: str, agent_config: dict[str, Any], port: int, subdomain: str) -> None:
         """Rewrite the remote `.env` file and restart supervisor programs."""
         env_content = self._render_env_file(self._build_env_map(agent_id, agent_config, port, subdomain))
@@ -383,6 +396,59 @@ server {{
                 client.close()
 
         await asyncio.to_thread(_sync)
+
+    async def verify_remote_env(
+        self,
+        agent_id: str,
+        agent_config: dict[str, Any],
+        port: int,
+        subdomain: str,
+        *,
+        keys: tuple[str, ...] | None = None,
+        attempts: int = 5,
+        delay_seconds: float = 1.0,
+    ) -> None:
+        """Verify that the remote `.env` contains the expected values."""
+        expected = self._build_env_map(agent_id, agent_config, port, subdomain)
+        keys_to_check = keys or (
+            "LIVEKIT_SIP_HOST",
+            "LIVEKIT_AGENT_NAME",
+            "SIP_AUTH_USERNAME",
+            "SIP_AUTH_PASSWORD",
+            "DEFAULT_TEST_NUMBER",
+            "PORT",
+            "WORKER_PORT",
+            "WEBHOOK_BASE_URL",
+        )
+
+        def _verify_once() -> dict[str, tuple[str, str]]:
+            client = self._connect()
+            try:
+                remote_env = self._read_remote_env(client, agent_id)
+            finally:
+                client.close()
+
+            mismatches: dict[str, tuple[str, str]] = {}
+            for key in keys_to_check:
+                expected_value = str(expected.get(key, ""))
+                actual_value = str(remote_env.get(key, ""))
+                if actual_value != expected_value:
+                    mismatches[key] = (expected_value, actual_value)
+            return mismatches
+
+        mismatches: dict[str, tuple[str, str]] = {}
+        for attempt in range(attempts):
+            mismatches = await asyncio.to_thread(_verify_once)
+            if not mismatches:
+                return
+            if attempt < attempts - 1:
+                await asyncio.sleep(delay_seconds)
+
+        mismatch_summary = ", ".join(
+            f"{key}=expected({mask_secret(expected_value)}) actual({mask_secret(actual_value)})"
+            for key, (expected_value, actual_value) in mismatches.items()
+        )
+        raise RuntimeError(f"Remote env verification failed for agent {agent_id}: {mismatch_summary}")
 
     async def deploy_agent(self, agent_id: str, agent_config: dict[str, Any], port: int, subdomain: str) -> dict[str, Any]:
         """Deploy a tenant runtime and wait for its health endpoint to respond."""

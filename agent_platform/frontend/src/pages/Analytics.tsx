@@ -77,12 +77,17 @@ export default function Analytics() {
 
   const totalOutcomes = outcomeData.reduce((s, d) => s + d.value, 0);
 
-  // Hourly distribution mock (if no real data)
-  const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-    hour: i,
-    label: i % 4 === 0 ? `${i === 0 ? '12' : i > 12 ? i - 12 : i}${i < 12 ? 'am' : 'pm'}` : '',
-    calls: Math.max(0, Math.round(Math.sin((i - 6) * Math.PI / 12) * 15 + Math.random() * 5)),
-  }));
+  const hourlyData = analytics?.calls_by_hour
+    ? Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        label: i % 4 === 0 ? `${i === 0 ? '12' : i > 12 ? i - 12 : i}${i < 12 ? 'am' : 'pm'}` : '',
+        calls: (analytics.calls_by_hour as Record<number, number>)[i] ?? 0,
+      }))
+    : Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        label: i % 4 === 0 ? `${i === 0 ? '12' : i > 12 ? i - 12 : i}${i < 12 ? 'am' : 'pm'}` : '',
+        calls: 0,
+      }));
 
   return (
     <div className="space-y-5">
@@ -110,10 +115,10 @@ export default function Analytics() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Total calls" value={analytics?.total_calls ?? 142} trend="\u2191 18% from last week" icon={Phone} color="bg-dash-blue-bg text-dash-blue" />
-          <KpiCard label="Appointments booked" value={analytics?.total_bookings ?? 58} trend="\u2191 12%" icon={Calendar} color="bg-dash-green-bg text-dash-green" />
-          <KpiCard label="Book rate" value={`${analytics?.booking_rate ?? 41}%`} trend="\u2191 4pp" icon={TrendingUp} color="bg-dash-pink-bg text-dash-pink" />
-          <KpiCard label="Avg response" value={analytics?.avg_duration ? formatDuration(analytics.avg_duration) : '0.4s'} trend="\u2193 improved" icon={Clock} color="bg-dash-amber-bg text-dash-amber" />
+          <KpiCard label="Total calls" value={analytics?.total_calls ?? 0} icon={Phone} color="bg-dash-blue-bg text-dash-blue" />
+          <KpiCard label="Appointments booked" value={analytics?.total_bookings ?? 0} icon={Calendar} color="bg-dash-green-bg text-dash-green" />
+          <KpiCard label="Book rate" value={analytics?.total_calls ? `${Math.round(((analytics.total_bookings ?? 0) / analytics.total_calls) * 100)}%` : '—'} icon={TrendingUp} color="bg-dash-pink-bg text-dash-pink" />
+          <KpiCard label="Avg duration" value={analytics?.avg_duration ? formatDuration(analytics.avg_duration) : '—'} icon={Clock} color="bg-dash-amber-bg text-dash-amber" />
         </div>
       )}
 

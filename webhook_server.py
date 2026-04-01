@@ -22,6 +22,7 @@ from database.db import (
     update_call_log,
 )
 from post_call_pipeline import post_call_pipeline
+from utils.livekit_config import normalize_livekit_sip_host
 
 
 load_dotenv(".env")
@@ -58,6 +59,26 @@ def _agent_name() -> str:
     )
 
 
+def _log_twilio_event(event: str, payload: dict[str, Any]) -> None:
+    """Log the Twilio fields most useful for call-bridge debugging."""
+    keys = [
+        "CallSid",
+        "ParentCallSid",
+        "CallStatus",
+        "Direction",
+        "From",
+        "To",
+        "DialCallSid",
+        "DialCallStatus",
+        "DialSipCallId",
+        "DialSipResponseCode",
+        "SipResponseCode",
+        "CallDuration",
+    ]
+    summary = {key: payload.get(key) for key in keys if payload.get(key) not in (None, "")}
+    logger.info("[TWILIO] %s %s", event, summary)
+
+
 def _build_twiml_sip_response(phone_number: str) -> str:
     """Render the TwiML response that bridges Twilio voice to LiveKit SIP.
 
@@ -68,16 +89,23 @@ def _build_twiml_sip_response(phone_number: str) -> str:
     Raises:
         RuntimeError: If SIP routing env vars are missing.
     """
-    sip_host = os.getenv("LIVEKIT_SIP_HOST", "").strip()
+    sip_host = normalize_livekit_sip_host(os.getenv("LIVEKIT_SIP_HOST", ""))
     sip_username = os.getenv("SIP_AUTH_USERNAME", "").strip()
     sip_password = os.getenv("SIP_AUTH_PASSWORD", "").strip()
+    webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
     if not sip_host or not sip_username or not sip_password:
         raise RuntimeError("LIVEKIT_SIP_HOST, SIP_AUTH_USERNAME, and SIP_AUTH_PASSWORD are required")
+    if not webhook_base_url:
+        raise RuntimeError("WEBHOOK_BASE_URL is required")
 
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f'<Dial><Sip username="{sip_username}" password="{sip_password}">'
+        f'<Dial answerOnBridge="true" callerId="{phone_number}" action="{webhook_base_url}/twilio/dial-action" method="POST">'
+        f'<Sip username="{sip_username}" password="{sip_password}" '
+        f'statusCallback="{webhook_base_url}/twilio/sip-status" '
+        'statusCallbackEvent="initiated ringing answered completed" '
+        'statusCallbackMethod="POST">'
         f"sip:{phone_number}@{sip_host};transport=tcp"
         "</Sip></Dial>"
         "</Response>"
@@ -146,6 +174,7 @@ async def twilio_voice(request: Request) -> PlainTextResponse:
     form = await request.form()
     payload = {key: value for key, value in form.items()}
     await _validate_twilio_request(request, payload)
+    _log_twilio_event("voice_webhook", payload)
 
     config = _agent_config()
     call_sid = str(payload.get("CallSid") or "")
@@ -180,6 +209,7 @@ async def twilio_status(request: Request, background_tasks: BackgroundTasks) -> 
     form = await request.form()
     payload = {key: value for key, value in form.items()}
     await _validate_twilio_request(request, payload)
+    _log_twilio_event("call_status", payload)
 
     call_sid = str(payload.get("CallSid") or "")
     call_status = str(payload.get("CallStatus") or "").lower()
@@ -209,6 +239,47 @@ async def twilio_status(request: Request, background_tasks: BackgroundTasks) -> 
             background_tasks.add_task(post_call_pipeline, call_sid, _agent_config())
 
     return JSONResponse({"ok": True, "call_sid": call_sid, "status": call_status})
+
+
+@app.post("/twilio/dial-action")
+async def twilio_dial_action(request: Request) -> PlainTextResponse:
+    """Log the result of the Twilio <Dial><Sip> attempt and keep failures debuggable."""
+    form = await request.form()
+    payload = {key: value for key, value in form.items()}
+    await _validate_twilio_request(request, payload)
+    _log_twilio_event("dial_action", payload)
+
+    dial_status = str(payload.get("DialCallStatus") or "").lower()
+    sip_response_code = str(payload.get("DialSipResponseCode") or "")
+    if dial_status not in {"completed", "answered"}:
+        logger.error(
+            "[TWILIO] SIP bridge failed status=%s sip_response_code=%s parent_call=%s dial_call=%s",
+            dial_status or "<unknown>",
+            sip_response_code or "<unknown>",
+            payload.get("CallSid") or "<unknown>",
+            payload.get("DialCallSid") or "<unknown>",
+        )
+        return PlainTextResponse(
+            '<?xml version="1.0" encoding="UTF-8"?><Response><Say>'
+            "We could not connect your call right now. Please try again later."
+            "</Say></Response>",
+            media_type="application/xml",
+        )
+
+    return PlainTextResponse(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        media_type="application/xml",
+    )
+
+
+@app.post("/twilio/sip-status")
+async def twilio_sip_status(request: Request) -> JSONResponse:
+    """Capture SIP-leg progress events from Twilio for bridge debugging."""
+    form = await request.form()
+    payload = {key: value for key, value in form.items()}
+    await _validate_twilio_request(request, payload)
+    _log_twilio_event("sip_status", payload)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/internal/test")

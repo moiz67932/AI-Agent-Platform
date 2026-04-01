@@ -149,7 +149,7 @@ function AddNumberDialog({ onClose }: { onClose: () => void }) {
               <Input
                 value={manualNumber}
                 onChange={(e) => setManualNumber(e.target.value)}
-                placeholder="+1 (212) 555-0100"
+                placeholder="+12125550100"
                 onKeyDown={(e) => e.key === 'Enter' && provision()}
               />
               <p className="text-xs text-dash-t3">

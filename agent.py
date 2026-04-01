@@ -1193,6 +1193,18 @@ async def _entrypoint_impl(ctx: JobContext):
     call_started = time.time()
 
     # ── State ─────────────────────────────────────────────────────────────────
+    # Extract industry_type early from AGENT_CONFIG env var so turn_tracker
+    # can be constructed before the full DB load at line ~1403.
+    # It will be overridden again after settings are fetched from Supabase.
+    _early_config_raw = (os.getenv("AGENT_CONFIG") or "{}").strip()
+    try:
+        _early_config: dict = json.loads(_early_config_raw)
+        if not isinstance(_early_config, dict):
+            _early_config = {}
+    except Exception:
+        _early_config = {}
+    industry_type: str = _early_config.get("industry_type") or "dental"
+
     state = PatientState()
     disconnect_event = asyncio.Event()
     turn_config = TurnTakingConfig(
@@ -1400,7 +1412,9 @@ async def _entrypoint_impl(ctx: JobContext):
             _config_json = json.loads(_config_json)
         except Exception:
             _config_json = {}
-    industry_type: str = (_config_json.get("industry_type") or "dental") if isinstance(_config_json, dict) else "dental"
+    industry_type = (_config_json.get("industry_type") or "dental") if isinstance(_config_json, dict) else "dental"
+    # Sync the already-constructed turn_tracker with the DB-confirmed industry_type.
+    turn_tracker.industry_type = industry_type
     industry_profile: IndustryProfile = get_profile(industry_type)
     logger.info(f"[INDUSTRY] Profile loaded: {industry_profile.industry_type} ({industry_profile.display_name})")
 
@@ -1912,6 +1926,8 @@ async def _entrypoint_impl(ctx: JobContext):
     assistant_tools._direct_say_callback = _direct_say
 
     # ── Greeting ──────────────────────────────────────────────────────────────
+    # Priority: DB settings > AGENT_CONFIG env > generic fallback
+    _config_greeting = _early_config.get("greeting_text") or ""
     if _is_urdu:
         greeting = (
             (settings or {}).get("greeting_text_urdu")
@@ -1920,6 +1936,7 @@ async def _entrypoint_impl(ctx: JobContext):
     else:
         greeting = (
             (settings or {}).get("greeting_text")
+            or _config_greeting
             or f"Hi, thanks for calling {clinic_name}! How can I help you today?"
         )
 
@@ -2475,12 +2492,10 @@ async def _entrypoint_impl(ctx: JobContext):
                 payload = {
                     "id": str(uuid.uuid4()),
                     "clinic_id": clinic_info["id"],
-                    "caller_number": caller_num,
-                    "caller_phone_masked": masked,
-                    "caller_name": state.full_name,
-                    "outcome": outcome,
+                    "caller_phone": caller_num,
+                    "status": outcome,
                     "duration_seconds": dur,
-                    "started_at": started_iso,
+                    "created_at": started_iso,
                     "ended_at": now_iso,
                 }
                 if clinic_info.get("organization_id"):
@@ -2489,8 +2504,8 @@ async def _entrypoint_impl(ctx: JobContext):
                     payload["agent_id"] = agent_info["id"]
                 _payload_snapshot = dict(payload)
                 success, result = await supabase_write_with_retry(
-                    lambda: supabase.table("call_sessions").insert(_payload_snapshot).execute(),
-                    table_name="call_sessions",
+                    lambda: supabase.table("call_logs").insert(_payload_snapshot).execute(),
+                    table_name="call_logs",
                 )
                 if success:
                     logger.info(f"[DB] Call session saved: outcome={outcome}")

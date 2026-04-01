@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bot, Phone, BookOpen, PhoneCall, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Bot, Phone, BookOpen, PhoneCall, ExternalLink, Loader2 } from 'lucide-react';
 import { TestCallModal } from '@/components/TestCallModal';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
@@ -16,11 +16,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAgent, useUpdateAgent, useToggleAgentStatus } from '@/hooks/useAgents';
+import { useAgent, useUpdateAgent, useToggleAgentStatus, usePublishAgent } from '@/hooks/useAgents';
 import { useCalls } from '@/hooks/useCalls';
 import { useAnalytics } from '@/hooks/useAnalytics';
-import { formatDuration, maskPhone, relativeTime } from '@/lib/utils';
+import { formatDuration, maskPhone, relativeTime, cn } from '@/lib/utils';
 import { INDUSTRY_COLORS, INDUSTRY_LABELS } from '@/types';
+import { Progress } from '@/components/ui/progress';
+import { toast } from '@/hooks/use-toast';
 
 function getRange(daysBack: number) {
   const end = new Date();
@@ -226,7 +228,22 @@ export default function AgentOverview() {
   const navigate = useNavigate();
   const { data: agent, isLoading } = useAgent(id!);
   const toggleStatus = useToggleAgentStatus();
+  const publishAgent = usePublishAgent();
   const [showTestCall, setShowTestCall] = useState(false);
+  const prevStatusRef = useRef<string | undefined>(undefined);
+
+  // Fire a toast when the agent transitions from deploying → live
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const curr = agent?.status;
+    if (prev === 'deploying' && curr === 'live') {
+      toast({ title: `${agent?.name} is live!`, description: 'Your agent is ready to take calls.' });
+    }
+    if (prev === 'deploying' && curr === 'error') {
+      toast({ title: 'Deploy failed', description: agent?.deploy_error ?? 'Unknown error', variant: 'destructive' });
+    }
+    prevStatusRef.current = curr;
+  }, [agent?.status, agent?.name, agent?.deploy_error]);
 
   if (isLoading) {
     return (
@@ -280,19 +297,36 @@ export default function AgentOverview() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-dash-t3">{agent.status === 'live' ? 'Live' : 'Paused'}</span>
-              <Switch
-                checked={agent.status === 'live'}
-                onCheckedChange={() => toggleStatus.mutate({
-                  id: agent.id,
-                  status: agent.status === 'live' ? 'paused' : 'live',
-                })}
-              />
-            </div>
+            {agent.status === 'deploying' ? (
+              <div className="flex items-center gap-2 text-sm text-dash-t2">
+                <Loader2 className="h-4 w-4 animate-spin text-dash-blue" />
+                <span>Deploying…</span>
+                {(agent.deploy_progress ?? 0) > 0 && (
+                  <span className="text-xs text-dash-t3">{agent.deploy_progress}%</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-dash-t3">{agent.status === 'live' ? 'Live' : 'Paused'}</span>
+                <Switch
+                  checked={agent.status === 'live'}
+                  onCheckedChange={() => toggleStatus.mutate({
+                    id: agent.id,
+                    status: agent.status === 'live' ? 'paused' : 'live',
+                  })}
+                  disabled={!['live', 'paused'].includes(agent.status)}
+                />
+              </div>
+            )}
             {agent.status === 'live' && (
               <Button variant="outline" size="sm" onClick={() => setShowTestCall(true)}>
                 <Phone className="mr-2 h-4 w-4" />Test Call
+              </Button>
+            )}
+            {agent.status === 'error' && (
+              <Button variant="outline" size="sm" onClick={() => publishAgent.mutate(agent.id)} disabled={publishAgent.isPending}>
+                {publishAgent.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Retry Deploy
               </Button>
             )}
             <Button variant="outline" size="sm" asChild>
@@ -308,6 +342,31 @@ export default function AgentOverview() {
           </div>
         </div>
       </div>
+
+      {/* Deploy progress banner */}
+      {agent.status === 'deploying' && (
+        <div className="rounded-xl border border-dash-blue-b bg-dash-blue-bg px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-dash-blue flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Setting up your agent on the server…
+            </span>
+            <span className="text-xs text-dash-t3">{agent.deploy_progress ?? 0}%</span>
+          </div>
+          <Progress value={agent.deploy_progress ?? 5} className="h-1.5" />
+          <p className="text-xs text-dash-t3 mt-2">
+            This takes 2–3 minutes. You'll get a notification when it's live. Feel free to leave this page.
+          </p>
+        </div>
+      )}
+
+      {/* Error banner */}
+      {agent.status === 'error' && agent.deploy_error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-sm font-medium text-red-700">Deploy failed</p>
+          <p className="text-xs text-red-600 mt-1 font-mono">{agent.deploy_error}</p>
+        </div>
+      )}
 
       <Tabs defaultValue="overview">
         <TabsList>

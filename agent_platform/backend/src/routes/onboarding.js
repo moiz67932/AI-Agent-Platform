@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
 
 const router = Router();
+const DEPLOY_API_URL = (process.env.DEPLOY_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 /**
  * POST /api/onboarding/complete
@@ -48,15 +49,26 @@ router.post('/complete', async (req, res, next) => {
       .single();
     if (clinicError) throw clinicError;
 
-    // 3. Create agent
+    // 3. Create agent (status starts as 'offline' — publish-async will move it to deploying → live)
     const { data: agent, error: agentError } = await supabase
       .from('agents')
       .insert({
         organization_id: orgId,
         clinic_id: clinic.id,
         name: agentConfig.name,
-        status: 'live',
+        status: 'offline',
         default_language: agentConfig.language || 'en',
+        config_json: {
+          twilio_existing_number: phoneNumber?.number
+            ? (() => {
+                const digits = (phoneNumber.number || '').replace(/\D/g, '');
+                if (digits.length === 10) return `+1${digits}`;
+                if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+                return digits.length > 0 ? `+${digits}` : null;
+              })()
+            : null,
+          twilio_release_on_unpublish: false,
+        },
       })
       .select()
       .single();
@@ -118,6 +130,18 @@ router.post('/complete', async (req, res, next) => {
         .select()
         .single();
       provisionedNumber = num;
+    }
+
+    // 7. Kick off async deploy — fire-and-forget; frontend polls /api/agents/:id/status
+    try {
+      await fetch(`${DEPLOY_API_URL}/api/agents/${agent.id}/publish-async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    } catch (deployErr) {
+      // Non-fatal: agent record is created, deploy will show as offline if this fails.
+      console.error(`[onboarding] publish-async failed for agent ${agent.id}:`, deployErr);
     }
 
     res.status(201).json({

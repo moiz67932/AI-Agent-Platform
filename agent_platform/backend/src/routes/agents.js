@@ -3,6 +3,8 @@ import { supabase } from '../services/supabase.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 
+const DEPLOY_API_URL = (process.env.DEPLOY_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+
 const router = Router();
 
 // GET /api/agents
@@ -162,13 +164,98 @@ router.post('/:id/test-call', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/agents/:id/publish-async  — proxies to Python deploy API
+router.post('/:id/publish-async', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Verify ownership
+    const { data: agent, error: fetchErr } = await supabase
+      .from('agents')
+      .select('id, status, phone_number')
+      .eq('id', id)
+      .eq('organization_id', req.orgId)
+      .single();
+    if (fetchErr || !agent) return res.status(404).json({ error: 'Agent not found' });
+
+    if (agent.status === 'live' && agent.phone_number) {
+      return res.json({ agent_id: id, status: 'live', phone_number: agent.phone_number });
+    }
+
+    const deployRes = await fetch(`${DEPLOY_API_URL}/api/agents/${id}/publish-async`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const payload = await deployRes.json();
+    if (!deployRes.ok) {
+      return res.status(deployRes.status).json(payload);
+    }
+    res.json(payload);
+  } catch (err) { next(err); }
+});
+
+// GET /api/agents/:id/status  — proxies to Python deploy API
+router.get('/:id/status', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Verify ownership
+    const { error: fetchErr } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', id)
+      .eq('organization_id', req.orgId)
+      .single();
+    if (fetchErr) return res.status(404).json({ error: 'Agent not found' });
+
+    const deployRes = await fetch(`${DEPLOY_API_URL}/api/agents/${id}/status`);
+    const payload = await deployRes.json();
+    res.status(deployRes.status).json(payload);
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/agents/:id
 router.delete('/:id', requireRole('owner'), async (req, res, next) => {
   try {
+    const { id } = req.params;
+
+    // Verify the agent belongs to this org first
+    const { data: agent, error: fetchErr } = await supabase
+      .from('agents')
+      .select('id, status, port, phone_number, twilio_phone_sid, livekit_trunk_id, livekit_dispatch_rule_id')
+      .eq('id', id)
+      .eq('organization_id', req.orgId)
+      .single();
+    if (fetchErr || !agent) return res.status(404).json({ error: 'Agent not found' });
+
+    // If the agent has infra deployed, unpublish it from the server first
+    const hasInfra = agent.status === 'live' || agent.status === 'deploying' ||
+      agent.port || agent.twilio_phone_sid || agent.livekit_trunk_id || agent.livekit_dispatch_rule_id;
+
+    if (hasInfra) {
+      try {
+        const deployRes = await fetch(`${DEPLOY_API_URL}/api/agents/${id}/unpublish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (!deployRes.ok) {
+          const body = await deployRes.text();
+          console.error(`[delete-agent] unpublish returned ${deployRes.status}: ${body}`);
+          // Continue with DB delete even if unpublish partially fails
+        }
+      } catch (unpublishErr) {
+        console.error(`[delete-agent] unpublish failed for agent ${id}:`, unpublishErr);
+        // Continue — we still want to remove the DB record
+      }
+    }
+
+    // Delete from Supabase (cascades to agent_settings, etc. via FK)
     const { error } = await supabase
       .from('agents')
       .delete()
-      .eq('id', req.params.id)
+      .eq('id', id)
       .eq('organization_id', req.orgId);
 
     if (error) throw error;

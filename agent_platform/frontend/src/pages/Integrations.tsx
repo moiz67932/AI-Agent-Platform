@@ -172,12 +172,7 @@ function WebhookConfig({ onClose }: { onClose: () => void }) {
 
 export default function Integrations() {
   const [configuring, setConfiguring] = useState<string | null>(null);
-
-  // Mock webhook logs
-  const webhookLogs = [
-    { id: '1', event: 'appointment.created', url: 'https://hooks.example.com/booking', status_code: 200, response_time_ms: 142, created_at: new Date().toISOString() },
-    { id: '2', event: 'call.completed', url: 'https://hooks.example.com/calls', status_code: 500, response_time_ms: 3210, created_at: new Date(Date.now() - 3600000).toISOString() },
-  ];
+  const webhookLogs: { id: string; event: string; url: string; status_code: number; response_time_ms: number; created_at: string }[] = [];
 
   return (
     <div className="space-y-6">
@@ -248,34 +243,41 @@ export default function Integrations() {
       <div>
         <h2 className="text-sm font-bold text-dash-t1 mb-3">Recent Webhook Deliveries</h2>
         <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-dash-border">
-                  {['Time', 'Event', 'URL', 'Status', 'Response Time'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs text-dash-t3 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {webhookLogs.map((log) => (
-                  <tr key={log.id} className="border-b border-dash-border hover:bg-dash-surface">
-                    <td className="px-4 py-3 text-xs text-dash-t3">
-                      {new Date(log.created_at).toLocaleTimeString()}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">{log.event}</td>
-                    <td className="px-4 py-3 text-xs text-dash-t3 truncate max-w-48">{log.url}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant={log.status_code === 200 ? 'success' : 'destructive'}>
-                        {log.status_code}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">{log.response_time_ms}ms</td>
+          {webhookLogs.length === 0 ? (
+            <div className="px-4 py-10 text-center">
+              <p className="text-sm font-medium text-dash-t2">No webhook deliveries yet</p>
+              <p className="text-xs text-dash-t3 mt-1">Configure a webhook endpoint above to start receiving events</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-dash-border">
+                    {['Time', 'Event', 'URL', 'Status', 'Response Time'].map((h) => (
+                      <th key={h} className="text-left px-4 py-3 text-xs text-dash-t3 font-medium">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {webhookLogs.map((log) => (
+                    <tr key={log.id} className="border-b border-dash-border hover:bg-dash-surface">
+                      <td className="px-4 py-3 text-xs text-dash-t3">
+                        {new Date(log.created_at).toLocaleTimeString()}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{log.event}</td>
+                      <td className="px-4 py-3 text-xs text-dash-t3 truncate max-w-48">{log.url}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={log.status_code === 200 ? 'success' : 'destructive'}>
+                          {log.status_code}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{log.response_time_ms}ms</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       </div>
 

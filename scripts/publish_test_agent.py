@@ -21,7 +21,9 @@ if root_str not in sys.path:
 load_dotenv(ROOT / ".env")
 load_dotenv(ROOT / ".env.local")
 
-PLATFORM_BASE_URL = "http://localhost:8000"
+DEFAULT_PLATFORM_BASE_URL = "http://127.0.0.1:8000"
+PLATFORM_BASE_URL = str(os.getenv("PLATFORM_BASE_URL") or DEFAULT_PLATFORM_BASE_URL).rstrip("/")
+TEST_TWILIO_NUMBER = "+13103410536"
 
 
 def http_json(method: str, url: str, payload: dict | None = None, timeout: int = 10) -> dict:
@@ -36,16 +38,63 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: int =
         return json.loads(body) if body else {}
 
 
+def candidate_platform_base_urls() -> list[str]:
+    configured = PLATFORM_BASE_URL.rstrip("/")
+    candidates: list[str] = [configured]
+
+    if configured == "http://localhost:8000":
+        candidates.append(DEFAULT_PLATFORM_BASE_URL)
+    elif configured == DEFAULT_PLATFORM_BASE_URL:
+        candidates.append("http://localhost:8000")
+
+    return candidates
+
+
 def check_platform_health() -> bool:
+    global PLATFORM_BASE_URL
+
+    errors: list[str] = []
+    for base_url in candidate_platform_base_urls():
+        try:
+            payload = http_json("GET", f"{base_url}/health", timeout=5)
+        except Exception as exc:
+            errors.append(f"{base_url}/health -> {exc}")
+            continue
+
+        if payload.get("status") == "ok":
+            PLATFORM_BASE_URL = base_url
+            return True
+
+        errors.append(f"{base_url}/health -> unexpected payload: {payload}")
+
+    print("Platform API health check failed.")
+    print("Start the platform API first: python run.py")
+    print("Tried:")
+    for item in errors:
+        print(f"  - {item}")
+    print("Tip: if the API is already running, set PLATFORM_BASE_URL explicitly or use 127.0.0.1 instead of localhost.")
+    return False
+
+
+async def find_existing_test_agents() -> list[str]:
+    connection = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
     try:
-        payload = http_json("GET", f"{PLATFORM_BASE_URL}/health", timeout=5)
-    except Exception:
-        print("Start the platform API first: python run.py")
-        return False
-    return payload.get("status") == "ok"
+        rows = await connection.fetch(
+            """
+            SELECT id
+            FROM agents
+            WHERE name = 'Test Agent'
+              AND config_json->>'twilio_existing_number' = $1
+            ORDER BY created_at DESC
+            """,
+            TEST_TWILIO_NUMBER,
+        )
+        return [str(row["id"]) for row in rows]
+    finally:
+        await connection.close()
 
 
-async def create_test_agent() -> str:
+async def create_or_reuse_test_agent(existing_agent_id: str | None = None) -> str:
     connection = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
     try:
         seed_row = await connection.fetchrow(
@@ -73,7 +122,43 @@ async def create_test_agent() -> str:
             "calendar_id": None,
             "industry_type": "dental",
             "greeting_text": "Hi, thanks for calling Test Business! How can I help?",
+            # Trial-account testing path: reuse the already-owned Twilio number +13103410536
+            # so this test agent does not attempt to buy a new number.
+            # Because this shared number and its LiveKit routing can only belong to one
+            # test agent row at a time, this script reuses a single Test Agent record.
+            # To move back to the normal production purchase flow later, remove the
+            # `twilio_existing_number` and `twilio_release_on_unpublish` keys below.
+            "twilio_existing_number": TEST_TWILIO_NUMBER,
+            "twilio_release_on_unpublish": False,
         }
+
+        if existing_agent_id:
+            await connection.execute(
+                """
+                UPDATE agents
+                SET organization_id = $1::uuid,
+                    clinic_id = $2::uuid,
+                    name = 'Test Agent',
+                    config_json = $3::jsonb,
+                    status = 'offline',
+                    deploy_error = NULL,
+                    phone_number = NULL,
+                    twilio_phone_sid = NULL,
+                    livekit_trunk_id = NULL,
+                    livekit_dispatch_rule_id = NULL,
+                    sip_auth_username = NULL,
+                    sip_auth_password = NULL,
+                    port = NULL,
+                    subdomain = NULL,
+                    updated_at = NOW()
+                WHERE id = $4::uuid
+                """,
+                str(seed_row["organization_id"]),
+                str(seed_row["clinic_id"]),
+                json.dumps(config),
+                existing_agent_id,
+            )
+            return existing_agent_id
 
         row = await connection.fetchrow(
             """
@@ -121,8 +206,25 @@ def main() -> int:
     if not check_platform_health():
         return 1
 
-    agent_id = asyncio.run(create_test_agent())
+    existing_agent_ids = asyncio.run(find_existing_test_agents())
+    existing_agent_id = existing_agent_ids[0] if existing_agent_ids else None
+    if existing_agent_ids:
+        print(f"Cleaning up {len(existing_agent_ids)} existing shared-number test agent(s)...")
+        for candidate_id in existing_agent_ids:
+            try:
+                http_json(
+                    "POST",
+                    f"{PLATFORM_BASE_URL}/api/agents/{candidate_id}/unpublish",
+                    payload={},
+                    timeout=120,
+                )
+            except Exception as exc:
+                print(f"Warning: could not unpublish previous test agent {candidate_id}: {exc}")
+        print(f"Reusing existing shared-number test agent: {existing_agent_id}")
+
+    agent_id = asyncio.run(create_or_reuse_test_agent(existing_agent_id))
     print(f"Created test agent: {agent_id}")
+    print(f"Using existing Twilio test number: {TEST_TWILIO_NUMBER}")
 
     try:
         publish_response = http_json(

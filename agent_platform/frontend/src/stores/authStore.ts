@@ -25,6 +25,10 @@ interface AuthProfileResponse {
   };
 }
 
+interface HydrateOptions {
+  showLoading?: boolean;
+}
+
 async function loadUserProfileFromTables(userId: string): Promise<{ org: Organization | null; role: User['role'] }> {
   let org: Organization | null = null;
   let role: User['role'] = 'owner';
@@ -186,13 +190,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (_initStarted && !shouldRetryHydration) return;
     _initStarted = true;
 
-    const hydrateFromSession = async (session: Session | null) => {
+    const hydrateFromSession = async (
+      session: Session | null,
+      { showLoading = true }: HydrateOptions = {}
+    ) => {
       if (!session?.user) {
         set({ session: null, user: null, org: null, loading: false, initialized: true });
         return;
       }
 
-      set({ session, loading: true });
+      set({ session, loading: showLoading ? true : get().loading });
 
       try {
         await get().loadUserProfile(session.user, session.access_token);
@@ -210,7 +217,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      await hydrateFromSession(session);
+      // TOKEN_REFRESHED fires on tab-focus when Supabase silently refreshes the
+      // access token. Keep the current UI mounted and only sync the session.
+      if (event === 'TOKEN_REFRESHED') {
+        if (session) set({ session });
+        return;
+      }
+
+      const currentState = get();
+      const sameUser = !!session?.user && session.user.id === currentState.session?.user.id;
+
+      // Supabase can emit SIGNED_IN again when a tab regains focus. Avoid
+      // toggling loading for the same signed-in user so in-progress forms stay mounted.
+      if (event === 'SIGNED_IN' && sameUser && currentState.user && currentState.org) {
+        set({ session, loading: false, initialized: true });
+        return;
+      }
+
+      if (event === 'USER_UPDATED' && sameUser && currentState.user) {
+        set({
+          session,
+          user: {
+            ...currentState.user,
+            email: session?.user.email || currentState.user.email,
+            full_name: (session?.user.user_metadata?.full_name as string) || currentState.user.full_name,
+            avatar_url: (session?.user.user_metadata?.avatar_url as string | undefined) ?? currentState.user.avatar_url,
+          },
+          loading: false,
+          initialized: true,
+        });
+        return;
+      }
+
+      await hydrateFromSession(session, { showLoading: !sameUser });
     });
     _authSubscription = subscription;
 
