@@ -184,6 +184,16 @@ Restart:
 curl -X POST http://localhost:8000/api/agents/<agent-id>/restart
 ```
 
+Restart only bounces the remote Supervisor processes. It does not upload your latest local `agent.py`, `utils/`, or other runtime files.
+
+To push local runtime code changes into an agent that is already live on Hetzner, run:
+
+```powershell
+python scripts/redeploy_agent.py --agent-id <agent-id>
+```
+
+The redeploy flow re-uploads the runtime bundle, refreshes the remote `.env`, reinstalls `requirements.txt`, restarts the worker/webhook, and waits for `/health` to return `200`.
+
 Unpublish:
 
 ```powershell

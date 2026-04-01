@@ -57,14 +57,14 @@ ORDINAL_DAY_RE = re.compile(
     re.IGNORECASE,
 )
 TIME_REFERENCE_RE = re.compile(
-    r"\b("
-    r"\d{1,2}:\d{2}\s*(?:am|pm|a\.m\.|p\.m\.)?|"
-    r"\d{1,2}\s*(?:am|pm|a\.m\.|p\.m\.)|"
+    r"(?<!\w)("
+    r"\d{1,2}:\d{2}\s*(?:am|pm|a\.?m\.?|p\.?m\.?)?|"
+    r"\d{1,2}\s*(?:am|pm|a\.?m\.?|p\.?m\.?)|"
     r"noon|midnight|morning|afternoon|evening|"
     r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
     r"(?:thirty|fifteen|forty[\s-]?five|forty|twenty|ten|oh five|o five)?\s*"
-    r"(?:am|pm|a\.m\.|p\.m\.)?"
-    r")\b",
+    r"(?:am|pm|a\.?m\.?|p\.?m\.?)?"
+    r")(?!\w)",
     re.IGNORECASE,
 )
 PHONE_INPUT_RE = re.compile(

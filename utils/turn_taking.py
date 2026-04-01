@@ -30,6 +30,7 @@ class PolicyAction(str, Enum):
 
 class ExpectedUserSlot(str, Enum):
     SERVICE = "service"
+    NAME = "name"
     DATE = "date"
     TIME = "time"
     DATE_TIME = "date_time"
@@ -188,9 +189,10 @@ WEAK_FRAGMENT_RE = re.compile(
     r"book it(?:\s+(?:on|at|for))?|"
     r"for the appointment(?:\s+(?:on|at|for))?|"
     r"for my appointment(?:\s+(?:on|at|for))?|"
-    r"i want it(?:\s+(?:on|at|for))?|"
-    r"on|at|for|around|in the|am|pm"
-    r")(?:[.!?]|\s.*)?$",
+    r"i want it(?:\s+(?:on|at|for))?"
+    r")(?:[.!?]|\s.*)?$"
+    r"|"
+    r"^(?:on|at|for|around|in the|am|pm)[.!?\s]*$",
     re.IGNORECASE,
 )
 EXPECTED_SLOT_HESITATION_PREFIX_RE = re.compile(
@@ -526,6 +528,19 @@ class StreamingTurnTracker:
             snap.expected_slot_status = "satisfied" if has_time else "unsatisfied"
             return
 
+        if expected_slot == ExpectedUserSlot.NAME:
+            # Satisfied when: name extracted via intro pattern, OR text is a short
+            # (≤4 word) utterance with no date/time/service/booking-intent content —
+            # i.e. the agent asked for the name and the caller replied with just a name.
+            from services.extraction_service import extract_name_quick as _eq
+            has_explicit_name = bool(_eq(text))
+            if not has_explicit_name and not has_date and not has_time and not snap.service:
+                tokens = _token_count(_normalize_text(text))
+                if tokens >= 1 and tokens <= 4 and not BOOKING_INTENT_RE.search(_normalize_text(text).lower()):
+                    has_explicit_name = True
+            snap.expected_slot_status = "satisfied" if has_explicit_name else "unsatisfied"
+            return
+
         if expected_slot == ExpectedUserSlot.SERVICE:
             snap.expected_slot_status = "satisfied" if bool(snap.service) else "unsatisfied"
             return
@@ -650,7 +665,13 @@ class StreamingTurnTracker:
         }
 
         if expected_slot and self.config.expected_slot_enable_date_time_fast_path:
-            if expected_slot == ExpectedUserSlot.DATE_TIME:
+            if expected_slot == ExpectedUserSlot.NAME:
+                if snap.expected_slot_status == "satisfied":
+                    snap.actionable = True
+                    snap.deterministic_next_step = "booking.capture_name"
+                elif snap.expected_slot_status == "unsatisfied":
+                    return
+            elif expected_slot == ExpectedUserSlot.DATE_TIME:
                 if snap.expected_slot_status == "satisfied":
                     snap.actionable = True
                     snap.deterministic_next_step = "booking.capture_datetime"
@@ -845,6 +866,12 @@ def _build_expected_slot_reprompt(
     known_name = snapshot.caller_name or patient_state.full_name
     known_service = snapshot.service or patient_state.reason
 
+    if expected_slot == ExpectedUserSlot.NAME.value:
+        return _with_optional_ack(
+            "What name should I put on the appointment?",
+            name=None,
+            filler_spoken=filler_spoken,
+        )
     if expected_slot == ExpectedUserSlot.SERVICE.value:
         return _with_optional_ack(
             "Can you tell me which service you'd like to book?",
@@ -960,6 +987,7 @@ def build_policy_decision(
         "booking.capture_datetime",
         "booking.capture_date",
         "booking.capture_time",
+        "booking.capture_name",
         "clinic_info.answer",
     }:
         return PolicyDecision(

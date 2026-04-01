@@ -346,6 +346,20 @@ server {{
         finally:
             sftp.close()
 
+    def _clear_remote_runtime_bundle(self, client: paramiko.SSHClient, remote_dir: str) -> None:
+        """Remove previously uploaded runtime paths before a code sync."""
+        targets = [
+            posixpath.join(remote_dir, relative_path.replace("\\", "/"))
+            for relative_path in self.RUNTIME_PATHS
+        ]
+        if not targets:
+            return
+        self._exec(
+            client,
+            "rm -rf " + " ".join(shlex.quote(path) for path in targets),
+            check=False,
+        )
+
     def _sync_remote_env(self, client: paramiko.SSHClient, agent_id: str, env_content: str) -> None:
         """Write the `.env` file for a remote deployment."""
         remote_dir = self._remote_dir(agent_id)
@@ -450,55 +464,84 @@ server {{
         )
         raise RuntimeError(f"Remote env verification failed for agent {agent_id}: {mismatch_summary}")
 
-    async def deploy_agent(self, agent_id: str, agent_config: dict[str, Any], port: int, subdomain: str) -> dict[str, Any]:
-        """Deploy a tenant runtime and wait for its health endpoint to respond."""
+    def _write_process_configs(
+        self,
+        client: paramiko.SSHClient,
+        agent_id: str,
+        remote_dir: str,
+        subdomain: str,
+        port: int,
+    ) -> None:
+        """Write supervisor and nginx configs for the tenant runtime."""
+        supervisor_conf = self._render_supervisor_config(agent_id, remote_dir, port)
+        nginx_conf = self._render_nginx_config(subdomain, port)
+
+        sftp = client.open_sftp()
+        try:
+            self._write_remote_file(sftp, self._supervisor_conf_path(agent_id), supervisor_conf)
+            if self.agents_domain != "localhost":
+                self._write_remote_file(sftp, self._nginx_conf_path(subdomain), nginx_conf)
+        finally:
+            sftp.close()
+
+    def _install_runtime_dependencies(self, client: paramiko.SSHClient, remote_dir: str) -> None:
+        """Create the venv if needed and install the uploaded Python dependencies."""
+        self._exec(
+            client,
+            " && ".join(
+                (
+                    f"cd {shlex.quote(remote_dir)}",
+                    "python3 -m venv .venv",
+                    ".venv/bin/pip install --upgrade pip",
+                    ".venv/bin/pip install -r requirements.txt",
+                )
+            ),
+        )
+
+    def _reload_runtime_processes(self, client: paramiko.SSHClient, agent_id: str) -> None:
+        """Reload supervisor and nginx so the updated runtime starts serving traffic."""
+        self._exec(client, "supervisorctl reread", check=False)
+        self._exec(client, "supervisorctl update", check=False)
+        self._exec(client, f"supervisorctl restart agent-{agent_id}-worker agent-{agent_id}-web", check=False)
+
+        if self.agents_domain != "localhost":
+            self._exec(client, "nginx -t")
+            self._exec(client, "systemctl reload nginx")
+
+    async def _deploy_runtime(
+        self,
+        agent_id: str,
+        agent_config: dict[str, Any],
+        port: int,
+        subdomain: str,
+        *,
+        clean_runtime_paths: bool,
+    ) -> dict[str, Any]:
+        """Upload runtime code, sync env/config, and wait for health."""
         env_map = self._build_env_map(agent_id, agent_config, port, subdomain)
         env_content = self._render_env_file(env_map)
         remote_dir = self._remote_dir(agent_id)
-        supervisor_conf = self._render_supervisor_config(agent_id, remote_dir, port)
-        nginx_conf = self._render_nginx_config(subdomain, port)
         health_url = f"{self.build_webhook_base_url(subdomain, port)}/health"
         logger.info(
-            "Preparing deploy for agent=%s port=%s worker_port=%s webhook_base=%s",
+            "Preparing runtime sync for agent=%s port=%s worker_port=%s webhook_base=%s clean=%s",
             agent_id,
             port,
             env_map["WORKER_PORT"],
             self.build_webhook_base_url(subdomain, port),
+            clean_runtime_paths,
         )
 
         def _deploy() -> None:
             client = self._connect()
             try:
                 self._ensure_remote_parent(client, remote_dir)
+                if clean_runtime_paths:
+                    self._clear_remote_runtime_bundle(client, remote_dir)
                 self._upload_runtime_bundle(client, remote_dir)
                 self._sync_remote_env(client, agent_id, env_content)
-
-                sftp = client.open_sftp()
-                try:
-                    self._write_remote_file(sftp, self._supervisor_conf_path(agent_id), supervisor_conf)
-                    if self.agents_domain != "localhost":
-                        self._write_remote_file(sftp, self._nginx_conf_path(subdomain), nginx_conf)
-                finally:
-                    sftp.close()
-
-                self._exec(
-                    client,
-                    " && ".join(
-                        (
-                            f"cd {shlex.quote(remote_dir)}",
-                            "python3 -m venv .venv",
-                            ".venv/bin/pip install --upgrade pip",
-                            ".venv/bin/pip install -r requirements.txt",
-                        )
-                    ),
-                )
-                self._exec(client, "supervisorctl reread", check=False)
-                self._exec(client, "supervisorctl update", check=False)
-                self._exec(client, f"supervisorctl restart agent-{agent_id}-worker agent-{agent_id}-web", check=False)
-
-                if self.agents_domain != "localhost":
-                    self._exec(client, "nginx -t")
-                    self._exec(client, "systemctl reload nginx")
+                self._write_process_configs(client, agent_id, remote_dir, subdomain, port)
+                self._install_runtime_dependencies(client, remote_dir)
+                self._reload_runtime_processes(client, agent_id)
             finally:
                 client.close()
 
@@ -510,6 +553,26 @@ server {{
             "remote_dir": remote_dir,
             "webhook_base_url": self.build_webhook_base_url(subdomain, port),
         }
+
+    async def deploy_agent(self, agent_id: str, agent_config: dict[str, Any], port: int, subdomain: str) -> dict[str, Any]:
+        """Deploy a tenant runtime and wait for its health endpoint to respond."""
+        return await self._deploy_runtime(
+            agent_id,
+            agent_config,
+            port,
+            subdomain,
+            clean_runtime_paths=False,
+        )
+
+    async def redeploy_agent(self, agent_id: str, agent_config: dict[str, Any], port: int, subdomain: str) -> dict[str, Any]:
+        """Re-upload a live tenant runtime so local code changes reach the server."""
+        return await self._deploy_runtime(
+            agent_id,
+            agent_config,
+            port,
+            subdomain,
+            clean_runtime_paths=True,
+        )
 
     async def remove_agent(self, agent_id: str, port: int | None, subdomain: str | None) -> None:
         """Remove a deployed tenant runtime and its remote configs."""

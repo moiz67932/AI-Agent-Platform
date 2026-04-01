@@ -58,6 +58,17 @@ def _normalize_config_json(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _normalize_agent_id(agent_id: str) -> str:
+    """Accept either a raw UUID or `agent-<uuid>` and return the raw UUID."""
+    candidate = str(agent_id or "").strip()
+    if candidate.lower().startswith("agent-"):
+        candidate = candidate[6:]
+    try:
+        return str(UUID(candidate))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid agent ID: {agent_id}") from exc
+
+
 def _json_safe(value: Any) -> Any:
     """Convert DB-native values like UUIDs into JSON-safe primitives."""
     if isinstance(value, UUID):
@@ -113,6 +124,7 @@ def _build_runtime_agent_config(agent_row: dict[str, Any]) -> dict[str, Any]:
 
 async def _run_publish(agent_id: str) -> None:
     """Full publish pipeline — can be called directly or as a background task."""
+    agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
     twilio_provisioner = get_twilio_provisioner()
     async with db_transaction() as connection:
@@ -208,6 +220,7 @@ async def publish_agent_async(agent_id: str, background_tasks: BackgroundTasks) 
     Raises:
         HTTPException: If the agent does not exist or is already deploying/live.
     """
+    agent_id = _normalize_agent_id(agent_id)
     agent_row = await get_agent(agent_id)
     if agent_row is None:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -233,6 +246,7 @@ async def publish_agent(agent_id: str) -> dict[str, Any]:
     Raises:
         HTTPException: If the agent is missing or the publish workflow fails.
     """
+    agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
     agent_row = await get_agent(agent_id)
     if agent_row is None:
@@ -287,6 +301,7 @@ async def unpublish_agent(agent_id: str) -> dict[str, Any]:
     Raises:
         HTTPException: If the agent does not exist.
     """
+    agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
     twilio_provisioner = get_twilio_provisioner()
     agent_row = await get_agent(agent_id)
@@ -326,11 +341,53 @@ async def restart_agent(agent_id: str) -> dict[str, Any]:
     Returns:
         Restart confirmation and current supervisor status.
     """
+    agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
     if await get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     await server_manager.restart_agent(agent_id)
     return {"agent_id": agent_id, "status": await server_manager.get_agent_status(agent_id)}
+
+
+@router.post("/api/agents/{agent_id}/redeploy")
+async def redeploy_agent(agent_id: str) -> dict[str, Any]:
+    """Re-upload runtime code for an already-published agent."""
+    agent_id = _normalize_agent_id(agent_id)
+    server_manager = get_server_manager()
+    agent_row = await get_agent(agent_id)
+    if agent_row is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if agent_row.get("port") is None or not agent_row.get("subdomain"):
+        raise HTTPException(status_code=400, detail="Agent is not published yet")
+
+    port = int(agent_row["port"])
+    subdomain = str(agent_row["subdomain"])
+    enriched_row = await get_agent_with_clinic(agent_id) or agent_row
+    runtime_config = _build_runtime_agent_config(enriched_row)
+
+    await update_agent_fields(agent_id, {"status": "deploying", "deploy_error": None})
+
+    try:
+        deploy_result = await server_manager.redeploy_agent(
+            agent_id,
+            runtime_config,
+            port,
+            subdomain,
+        )
+        await server_manager.verify_remote_env(agent_id, runtime_config, port, subdomain)
+    except Exception as exc:
+        await update_agent_fields(agent_id, {"status": "error", "deploy_error": str(exc)})
+        raise HTTPException(status_code=500, detail=f"Redeploy failed: {exc}") from exc
+
+    await update_agent_fields(agent_id, {"status": "live", "deploy_error": None})
+    return {
+        "agent_id": agent_id,
+        "status": "live",
+        "webhook_base_url": deploy_result.get("webhook_base_url"),
+        "health_url": deploy_result.get("health_url"),
+        "remote_dir": deploy_result.get("remote_dir"),
+    }
 
 
 @router.get("/api/agents/{agent_id}/logs")
@@ -343,6 +400,7 @@ async def get_agent_logs(agent_id: str, lines: int = Query(default=50, ge=1, le=
     Returns:
         Combined supervisor logs.
     """
+    agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
     if await get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -358,6 +416,7 @@ async def get_agent_status(agent_id: str) -> dict[str, Any]:
     Returns:
         Agent lifecycle state, derived URL, and recent deploy error if any.
     """
+    agent_id = _normalize_agent_id(agent_id)
     agent_row = await get_agent(agent_id)
     if agent_row is None:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -413,6 +472,7 @@ async def get_analytics(agent_id: str, days: int = Query(default=30, ge=1, le=36
     Returns:
         Analytics data list.
     """
+    agent_id = _normalize_agent_id(agent_id)
     if await get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"agent_id": agent_id, "data": await get_agent_analytics(agent_id, days=days)}
@@ -435,6 +495,7 @@ async def get_calls(
     Returns:
         Paginated call log data.
     """
+    agent_id = _normalize_agent_id(agent_id)
     if await get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return {
@@ -460,6 +521,7 @@ async def get_appointments(
     Returns:
         Paginated appointment data.
     """
+    agent_id = _normalize_agent_id(agent_id)
     if await get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return {

@@ -310,5 +310,194 @@ class TurnTakingPolicyTests(unittest.TestCase):
         self.assertIn("expected_slot=", tracker_log)
 
 
+class NameSlotTests(unittest.TestCase):
+    """Bug: bare-name reply after agent asks 'What name should I put on the appointment?' was not captured."""
+
+    def setUp(self) -> None:
+        self.config = TurnTakingConfig(
+            short_pause_ms=900,
+            continuation_wait_ms=650,
+            low_confidence_threshold=0.6,
+            deterministic_fast_path_enabled=True,
+            expected_slot_enable_date_time_fast_path=True,
+        )
+
+    def _tracker_with_name_slot(self) -> StreamingTurnTracker:
+        tracker = StreamingTurnTracker(self.config)
+        tracker.set_expected_user_slot(ExpectedUserSlot.NAME)
+        return tracker
+
+    def test_bare_name_satisfies_name_slot(self) -> None:
+        tracker = self._tracker_with_name_slot()
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript("John", is_final=True, patient_state=PatientState(), silence_ms=1200)
+        self.assertEqual(snap.expected_slot_status, "satisfied")
+        decision = build_policy_decision(snap, PatientState(), self.config)
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.deterministic_route, "booking.capture_name")
+
+    def test_two_word_name_satisfies_name_slot(self) -> None:
+        tracker = self._tracker_with_name_slot()
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript("John Smith", is_final=True, patient_state=PatientState(), silence_ms=1200)
+        self.assertEqual(snap.expected_slot_status, "satisfied")
+
+    def test_name_slot_unsatisfied_for_date_text(self) -> None:
+        tracker = self._tracker_with_name_slot()
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript("tomorrow", is_final=True, patient_state=PatientState(), silence_ms=1200)
+        # "tomorrow" has a date reference — should NOT satisfy the name slot
+        self.assertEqual(snap.expected_slot_status, "unsatisfied")
+
+    def test_name_slot_cleared_after_no_name_slot_set(self) -> None:
+        tracker = StreamingTurnTracker(self.config)
+        self.assertIsNone(tracker.expected_user_slot)
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript("John", is_final=True, patient_state=PatientState(), silence_ms=1200)
+        # No expected slot → should NOT get capture_name fast-path
+        decision = build_policy_decision(snap, PatientState(), self.config)
+        self.assertNotEqual(decision.deterministic_route, "booking.capture_name")
+
+
+class TimeReferenceRegressionTests(unittest.TestCase):
+    """Bug: 'At 2 p.m.' and '2 p.m' were not detected as time references."""
+
+    def test_at_2_pm_dotted_detected(self) -> None:
+        from utils.agent_flow import has_time_reference
+        self.assertTrue(has_time_reference("At 2 p.m."))
+
+    def test_2_pm_no_trailing_dot_detected(self) -> None:
+        from utils.agent_flow import has_time_reference
+        self.assertTrue(has_time_reference("2 p.m"))
+
+    def test_2_pm_plain_detected(self) -> None:
+        from utils.agent_flow import has_time_reference
+        self.assertTrue(has_time_reference("2pm"))
+
+    def test_at_2pm_detected(self) -> None:
+        from utils.agent_flow import has_time_reference
+        self.assertTrue(has_time_reference("at 2pm"))
+
+    def test_wednesday_not_time(self) -> None:
+        from utils.agent_flow import has_time_reference
+        self.assertFalse(has_time_reference("Wednesday"))
+
+    def test_john_not_time(self) -> None:
+        from utils.agent_flow import has_time_reference
+        self.assertFalse(has_time_reference("John"))
+
+    def test_at_2pm_satisfies_time_slot(self) -> None:
+        """After fix, 'at 2pm' should satisfy expected_slot=TIME rather than wait as continuation."""
+        config = TurnTakingConfig(
+            short_pause_ms=900,
+            continuation_wait_ms=650,
+            low_confidence_threshold=0.6,
+            deterministic_fast_path_enabled=True,
+            expected_slot_enable_date_time_fast_path=True,
+        )
+        tracker = StreamingTurnTracker(config)
+        tracker.set_expected_user_slot(ExpectedUserSlot.TIME)
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript("At 2 p.m.", is_final=True, patient_state=PatientState(), silence_ms=1200)
+        self.assertEqual(snap.expected_slot_status, "satisfied")
+        decision = build_policy_decision(snap, PatientState(), config)
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.deterministic_route, "booking.capture_time")
+
+    def test_2pm_dotted_satisfies_time_slot(self) -> None:
+        config = TurnTakingConfig(
+            short_pause_ms=900,
+            continuation_wait_ms=650,
+            low_confidence_threshold=0.6,
+            deterministic_fast_path_enabled=True,
+            expected_slot_enable_date_time_fast_path=True,
+        )
+        tracker = StreamingTurnTracker(config)
+        tracker.set_expected_user_slot(ExpectedUserSlot.TIME)
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript("2 p.m", is_final=True, patient_state=PatientState(), silence_ms=1200)
+        self.assertEqual(snap.expected_slot_status, "satisfied")
+
+
+class ConflictAfterSlotTests(unittest.TestCase):
+    """Bug: After 'We are closed on Wednesdays. Would you like to try another time?'
+    expected_slot was cleared, then 'this Thursday at 2pm' had no fast-path.
+    """
+
+    def setUp(self) -> None:
+        self.config = TurnTakingConfig(
+            short_pause_ms=900,
+            continuation_wait_ms=650,
+            low_confidence_threshold=0.6,
+            deterministic_fast_path_enabled=True,
+            expected_slot_enable_date_time_fast_path=True,
+        )
+
+    def test_thursday_at_2pm_satisfies_date_time_slot(self) -> None:
+        tracker = StreamingTurnTracker(self.config)
+        tracker.set_expected_user_slot(ExpectedUserSlot.DATE_TIME)
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript(
+            "Then do it on this Thursday at 2pm",
+            is_final=True,
+            patient_state=PatientState(),
+            silence_ms=1200,
+        )
+        self.assertEqual(snap.expected_slot_status, "satisfied")
+        decision = build_policy_decision(snap, PatientState(), self.config)
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.deterministic_route, "booking.capture_datetime")
+
+    def test_time_only_follow_up_with_date_context_in_state(self) -> None:
+        """'At 2 p.m.' after date context exists in state → partial_time or satisfied for DATE_TIME."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        state = PatientState()
+        state.dt_text = "this Thursday"
+        # No dt_local yet — date referenced but time not resolved
+
+        tracker = StreamingTurnTracker(self.config)
+        tracker.set_expected_user_slot(ExpectedUserSlot.DATE_TIME)
+        tracker.start_new_turn()
+        snap = tracker.ingest_transcript(
+            "At 2 p.m.",
+            is_final=True,
+            patient_state=state,
+            silence_ms=1200,
+        )
+        # has_time=True, has_date=False, _state_has_date=True → partial_time
+        self.assertIn(snap.expected_slot_status, {"partial_time", "satisfied"})
+        decision = build_policy_decision(snap, state, self.config)
+        self.assertIn(decision.deterministic_route, {"booking.capture_time", "booking.capture_datetime"})
+
+    def test_full_booking_flow_with_conflict_and_alternative(self) -> None:
+        """Simulates: book → conflict on Wednesday → rebook Thursday at 2pm."""
+        tracker = StreamingTurnTracker(self.config)
+        state = PatientState()
+        state.reason = "Teeth whitening"
+
+        # Turn 1: user books with Wednesday
+        tracker.start_new_turn()
+        tracker.set_expected_user_slot(ExpectedUserSlot.DATE_TIME)
+        snap1 = tracker.ingest_transcript(
+            "Do it tomorrow at 2pm", is_final=True, patient_state=state, silence_ms=1200
+        )
+        self.assertEqual(snap1.expected_slot_status, "satisfied")
+
+        # Simulate: agent responds with conflict → sets DATE_TIME expected slot
+        # (The real code does this via _infer_expected_slot_from_response)
+        tracker.set_expected_user_slot(ExpectedUserSlot.DATE_TIME)
+
+        # Turn 2: user gives new slot
+        tracker.start_new_turn()
+        snap2 = tracker.ingest_transcript(
+            "Then do it on this Thursday at 2pm", is_final=True, patient_state=state, silence_ms=1200
+        )
+        self.assertEqual(snap2.expected_slot_status, "satisfied")
+        decision2 = build_policy_decision(snap2, state, self.config)
+        self.assertEqual(decision2.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision2.deterministic_route, "booking.capture_datetime")
+
+
 if __name__ == "__main__":
     unittest.main()

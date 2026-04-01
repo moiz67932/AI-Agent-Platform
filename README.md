@@ -32,6 +32,8 @@ See `DEPLOYMENT.md` for full setup.
 9. Publish test agent: `python scripts/publish_test_agent.py`
 10. Call the provisioned number
 
+After an agent is already published, local edits are not reflected automatically on Hetzner. Push updated runtime code with `python scripts/redeploy_agent.py --agent-id <agent-id>`.
+
 ## Key Files
 
 `agent.py` - voice agent (do not modify)

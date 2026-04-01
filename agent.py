@@ -714,6 +714,21 @@ def _build_no_repeat_llm_instruction(state: PatientState, latest_user_text: str)
 
     if latest_user_text:
         guards.append("If the caller asked a direct question, answer it briefly before asking for anything else.")
+        # If the latest user text contains a date+time reference, treat it as a slot
+        # capture attempt — do NOT ask for it again.
+        if has_date_reference(latest_user_text) and has_time_reference(latest_user_text):
+            guards.append(
+                f"CRITICAL: The caller's last message '{latest_user_text}' contains both a date "
+                f"and a time. Treat this as their booking request. Call update_patient_record "
+                f"with time_suggestion='{latest_user_text}' IMMEDIATELY. Do NOT ask 'what time' or "
+                f"'what day' — both were already stated."
+            )
+        elif has_date_reference(latest_user_text) and not state.dt_local:
+            guards.append(
+                f"The caller's last message '{latest_user_text}' states a date. "
+                f"Call update_patient_record with time_suggestion='{latest_user_text}'. "
+                f"Then ask only for the missing time."
+            )
     return " ".join(guards)
 
 
@@ -727,6 +742,11 @@ def _infer_expected_slot_from_response(
 
     if route in {"booking.ask_service", "booking.reask_service"}:
         return ExpectedUserSlot.SERVICE
+    if route in {"booking.ask_name", "booking.reask_name"}:
+        return ExpectedUserSlot.NAME
+    if route == "booking.capture_name":
+        # Name was captured — clear the slot
+        return None
     if route in {"booking.ask_date_time", "booking.reask_date_time"}:
         return ExpectedUserSlot.DATE_TIME
     if route in {"booking.ask_date", "booking.reask_date"}:
@@ -741,6 +761,15 @@ def _infer_expected_slot_from_response(
         return ExpectedUserSlot.SERVICE
 
     if (
+        "what name should i put" in normalized
+        or "name for the appointment" in normalized
+        or "name to put on the appointment" in normalized
+        or "what name do you" in normalized
+        or ("name" in normalized and "appointment" in normalized and "put" in normalized)
+    ):
+        return ExpectedUserSlot.NAME
+
+    if (
         "can i use the number you're calling from" in normalized
         or "is this the right number to send your confirmation to" in normalized
         or bool(state and (state.pending_confirm == "phone" or state.pending_confirm_field == "phone"))
@@ -752,6 +781,35 @@ def _infer_expected_slot_from_response(
     if "what day would you like" in normalized or "could you specify the day" in normalized:
         return ExpectedUserSlot.DATE
     if "what day and time would you like" in normalized:
+        return ExpectedUserSlot.DATE_TIME
+
+    # Conflict/closure response: agent rejected the slot and is asking for an alternative.
+    # Covers LLM-generated phrasings like:
+    #   "We are closed on Wednesdays. Would you like to try another time?"
+    #   "That slot is taken. Would you prefer a different time?"
+    #   "I apologize, we're closed today. Would you like to schedule for tomorrow?"
+    conflict_response = (
+        "would you like to try another time" in normalized
+        or "would you like a different time" in normalized
+        or "try a different time" in normalized
+        or "try another day" in normalized
+        or "would you like to try another day" in normalized
+        or "prefer a different time" in normalized
+        or "prefer a different day" in normalized
+        or (
+            ("closed" in normalized or "not available" in normalized or "slot is taken" in normalized
+             or "that time" in normalized or "that slot" in normalized)
+            and ("would you like" in normalized or "would you prefer" in normalized
+                 or "another" in normalized or "different" in normalized or "instead" in normalized)
+        )
+        or "would you like to schedule" in normalized
+        or "would you like to book" in normalized
+        or "apologize" in normalized and "closed" in normalized
+    )
+    if conflict_response:
+        # If state already has a confirmed date but no valid time, just ask for time
+        if state and state.dt_text and has_date_reference(state.dt_text) and not state.dt_local:
+            return ExpectedUserSlot.TIME
         return ExpectedUserSlot.DATE_TIME
 
     alternative_slot_prompt = (
@@ -1657,6 +1715,39 @@ async def _entrypoint_impl(ctx: JobContext):
             _interrupt_filler(force=True)
             route = str(decision.deterministic_route or "")
 
+            if route == "booking.capture_name":
+                capture_text = (
+                    turn_tracker.snapshot.current_turn_accumulated_text
+                    or turn_tracker.snapshot.latest_finalized_text
+                ).strip()
+                # Normalize the name: strip common filler prefixes
+                from utils.agent_flow import normalize_patient_name
+                from services.extraction_service import extract_name_quick
+                raw_name = (
+                    extract_name_quick(capture_text)
+                    or normalize_patient_name(capture_text)
+                    or capture_text
+                )
+                turn_tracker.mark_main_response_started()
+                if mark_direct_response is not None:
+                    mark_direct_response()
+                logger.info(
+                    f"[EXPECTED SLOT] satisfied=name status=satisfied "
+                    f"text='{capture_text}' → name='{raw_name}'"
+                )
+                logger.info(f"[FAST PATH] route=booking.capture_name name='{raw_name}'")
+                spoken_text = await assistant_tools.update_patient_record(  # type: ignore[call-arg]
+                    name=raw_name
+                )
+                spoken_text = str(spoken_text or "").strip()
+                if turn_tracker.snapshot.filler_spoken_for_turn:
+                    spoken_text = strip_duplicate_acknowledgement(spoken_text)
+                await refresh_agent_memory_async()
+                _apply_expected_slot_from_output(route=route, spoken_text=spoken_text)
+                if spoken_text:
+                    _safe_say(spoken_text)
+                return True
+
             if route in {"booking.capture_datetime", "booking.capture_date", "booking.capture_time"}:
                 capture_text = (
                     turn_tracker.snapshot.current_turn_accumulated_text
@@ -1780,7 +1871,7 @@ async def _entrypoint_impl(ctx: JobContext):
                 _set_expected_slot(ExpectedUserSlot.DATE_TIME, reason="datetime_direct_ask")
                 _safe_say(ask_text)
                 logger.info(f"[FAST PATH] datetime_direct_ask bypassed LLM: '{ask_text}'")
-                return "stop"
+                return True
 
             _turn_runtime["planned_filler_text"] = None
             logger.info("[LLM PATH] mode=guarded_stateful_fallback")
@@ -2468,7 +2559,7 @@ async def _entrypoint_impl(ctx: JobContext):
                         category="lifecycle", message="booking_confirmed", level="info",
                         data={
                             "patient_name": state.full_name,
-                            "appointment_time": str(state.appointment_dt) if hasattr(state, "appointment_dt") else None,
+                            "appointment_time": str(state.dt_local) if state.dt_local else None,
                         },
                     )
                 elif state.call_ended and getattr(state, "user_declined_more_help", False):

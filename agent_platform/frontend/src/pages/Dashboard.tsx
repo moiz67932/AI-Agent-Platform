@@ -109,6 +109,20 @@ const PIPELINE_COLORS = [
   { bg: 'bg-dash-amber-bg', text: 'text-dash-amber' },
 ];
 
+function getPhoneNumberText(phoneNumber: unknown): string | null {
+  if (!phoneNumber) return null;
+  if (typeof phoneNumber === 'string') return phoneNumber;
+
+  if (typeof phoneNumber === 'object') {
+    const phoneRecord = phoneNumber as { phone_number?: unknown; phone_e164?: unknown };
+
+    if (typeof phoneRecord.phone_number === 'string') return phoneRecord.phone_number;
+    if (typeof phoneRecord.phone_e164 === 'string') return phoneRecord.phone_e164;
+  }
+
+  return null;
+}
+
 export default function Dashboard() {
   const { user } = useAuthStore();
   const todayRange = getTodayRange();
@@ -296,20 +310,24 @@ export default function Dashboard() {
               {liveAgents === 0 ? (
                 <p className="text-xs text-dash-t3 text-center py-2">No live agents yet</p>
               ) : (
-                (agents || []).filter(a => a.status === 'live').map((a: any) => (
-                  <div key={a.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="relative flex h-[6px] w-[6px]">
-                        <span className="absolute inline-flex h-full w-full rounded-full bg-dash-gdot opacity-50 animate-ping" />
-                        <span className="relative inline-flex h-[6px] w-[6px] rounded-full bg-dash-gdot" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-semibold text-dash-t1">{a.name}</p>
-                        {a.phone_number && <p className="text-[10px] font-mono text-dash-t3">{a.phone_number}</p>}
+                (agents || []).filter(a => a.status === 'live').map((a: any) => {
+                  const phoneNumberText = getPhoneNumberText(a.phone_number);
+
+                  return (
+                    <div key={a.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-[6px] w-[6px]">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-dash-gdot opacity-50 animate-ping" />
+                          <span className="relative inline-flex h-[6px] w-[6px] rounded-full bg-dash-gdot" />
+                        </span>
+                        <div>
+                          <p className="text-xs font-semibold text-dash-t1">{a.name}</p>
+                          {phoneNumberText && <p className="text-[10px] font-mono text-dash-t3">{phoneNumberText}</p>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
             {/* Mini week chart */}

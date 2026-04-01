@@ -22,6 +22,27 @@ def test_parse_env_content_round_trips_rendered_values() -> None:
     assert parsed["WEBHOOK_BASE_URL"] == "http://178.104.70.97:8001"
 
 
+def test_clear_remote_runtime_bundle_removes_all_runtime_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = AgentServerManager.__new__(AgentServerManager)
+    commands: list[tuple[str, bool]] = []
+
+    def fake_exec(client, command: str, *, check: bool = True) -> str:
+        commands.append((command, check))
+        return ""
+
+    monkeypatch.setattr(manager, "_exec", fake_exec)
+
+    manager._clear_remote_runtime_bundle(object(), "/opt/agents/agent-123")
+
+    assert len(commands) == 1
+    command, check = commands[0]
+    assert command.startswith("rm -rf ")
+    assert "/opt/agents/agent-123/agent.py" in command
+    assert "/opt/agents/agent-123/utils" in command
+    assert "/opt/agents/agent-123/services" in command
+    assert check is False
+
+
 @pytest.mark.asyncio
 async def test_verify_remote_env_detects_sip_password_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = AgentServerManager.__new__(AgentServerManager)
