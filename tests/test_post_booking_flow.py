@@ -240,29 +240,31 @@ class PostBookingFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("$299", session.say_calls[0][0])
         self.assertIn("Would you like that on WhatsApp, or by SMS on this number?", session.say_calls[0][0])
 
-    async def test_delivery_side_follow_up_uses_booked_service_context(self) -> None:
+    async def test_delivery_side_follow_up_uses_fresh_service_context(self) -> None:
         state = _booked_state()
         state.reason = "Teeth whitening"
         state.delivery_preference_pending = True
+        state.conversation_turn_index = 2
+        state.clinic_last_service_name = "Teeth whitening"
+        state.clinic_last_service_confidence = 0.95
+        state.clinic_last_service_turn_index = 1
+        state.clinic_last_subtype = "service_price"
+        state.clinic_last_topic_turn_index = 1
         session = _FakeSession()
         tools = AssistantTools(
             state,
-            knowledge_articles=[
-                {
-                    "title": "Service pricing",
-                    "body": (
-                        "We offer two professional whitening options: an in-office treatment for $450 that "
-                        "delivers immediate results, or custom take-home trays for $250 for a more gradual "
-                        "whitening experience. Root canal therapy is $800 for anterior teeth and $1,100 for "
-                        "molars."
-                    ),
-                    "category": "Pricing",
+            settings={
+                "config_json": {
+                    "services": [
+                        {"name": "Teeth whitening", "price": 280, "duration": 30, "enabled": True},
+                        {"name": "Root canal", "price": 800, "duration": 90, "enabled": True},
+                    ]
                 }
-            ],
+            },
         )
 
         result = await _handle_post_booking_turn(
-            text="What type is better?",
+            text="How long does it take?",
             state=state,
             assistant_tools=tools,
             session=session,
@@ -276,8 +278,7 @@ class PostBookingFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, "consumed")
         self.assertTrue(state.delivery_preference_pending)
-        self.assertIn("whitening options", session.say_calls[0][0])
-        self.assertNotIn("Root canal", session.say_calls[0][0])
+        self.assertIn("Teeth whitening usually takes about 30 minutes.", session.say_calls[0][0])
         self.assertIn("Would you like that on WhatsApp, or by SMS on this number?", session.say_calls[0][0])
 
     async def test_booking_with_known_delivery_asks_anything_else(self) -> None:

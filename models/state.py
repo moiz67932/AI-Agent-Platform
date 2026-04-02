@@ -76,6 +76,13 @@ class PatientState:
 
     last_user_text: Optional[str] = None
     recent_user_texts: List[str] = field(default_factory=list)
+    conversation_turn_index: int = 0
+    clinic_last_service_id: Optional[str] = None
+    clinic_last_service_name: Optional[str] = None
+    clinic_last_service_confidence: float = 0.0
+    clinic_last_service_turn_index: int = 0
+    clinic_last_subtype: Optional[str] = None
+    clinic_last_topic_turn_index: int = 0
 
     # Rejected slots (to avoid re-suggesting)
     rejected_slots: Set[str] = field(default_factory=set)
@@ -168,6 +175,7 @@ class PatientState:
         cleaned = " ".join((text or "").split()).strip()
         if not cleaned:
             return
+        self.conversation_turn_index += 1
         self.last_user_text = cleaned
         self.recent_user_texts.append(cleaned)
         if len(self.recent_user_texts) > max_items:

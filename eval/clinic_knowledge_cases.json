@@ -1,0 +1,72 @@
+[
+  {
+    "name": "service_price_structured",
+    "turns": [
+      {
+        "question": "What is the price of teeth whitening?",
+        "expect_contains": ["$280"],
+        "expect_excludes": ["Root canal"]
+      }
+    ]
+  },
+  {
+    "name": "service_duration_follow_up",
+    "turns": [
+      {
+        "question": "How much is teeth whitening?",
+        "expect_contains": ["$280"]
+      },
+      {
+        "question": "How long does it take?",
+        "expect_contains": ["30 minutes"],
+        "expect_excludes": ["$800"]
+      }
+    ]
+  },
+  {
+    "name": "service_list_resets_scope",
+    "turns": [
+      {
+        "question": "How much is teeth whitening?",
+        "expect_contains": ["$280"]
+      },
+      {
+        "question": "What services do you offer?",
+        "expect_contains": ["Teeth whitening", "Root canal", "Dental filling"],
+        "expect_excludes": ["$280"]
+      }
+    ]
+  },
+  {
+    "name": "service_switch",
+    "turns": [
+      {
+        "question": "How much is teeth whitening?",
+        "expect_contains": ["$280"]
+      },
+      {
+        "question": "What about root canal?",
+        "expect_contains": ["$800"],
+        "expect_excludes": ["$280"]
+      }
+    ]
+  },
+  {
+    "name": "general_faq_payment",
+    "turns": [
+      {
+        "question": "What payment methods do you accept?",
+        "expect_contains": ["CareCredit", "Visa"]
+      }
+    ]
+  },
+  {
+    "name": "ambiguity_requires_clarification",
+    "turns": [
+      {
+        "question": "How much does it cost?",
+        "expect_contains": ["Which service would you like pricing for"]
+      }
+    ]
+  }
+]

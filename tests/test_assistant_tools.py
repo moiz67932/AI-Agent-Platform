@@ -356,7 +356,7 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         result = await tools.search_clinic_info("Can I get to know the pricing of teeth whitening?")
 
         self.assertIn("$299", result)
-        self.assertIn("single in-office session", result)
+        self.assertEqual(result, "Teeth whitening is $299.")
 
     async def test_search_clinic_info_humanizes_compact_service_pricing_without_llm(self) -> None:
         state = PatientState(reason="Teeth whitening")
@@ -373,10 +373,7 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
 
         result = await tools.search_clinic_info("What is the pricing of teeth whitening?")
 
-        self.assertEqual(
-            result,
-            "Teeth whitening is $280, and it usually takes about 30 minutes.",
-        )
+        self.assertEqual(result, "Teeth whitening is $280.")
 
     async def test_search_clinic_info_prefers_pricing_article_over_policy_for_whitening(self) -> None:
         state = PatientState(reason="Teeth whitening")
@@ -562,32 +559,30 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
 
         result = await tools.search_clinic_info("What is the pricing of whitepaper?")
 
-        self.assertIn("Which treatment", result)
+        self.assertEqual(result, "Which service would you like pricing for?")
         self.assertNotIn("$125", result)
 
-    async def test_answer_clinic_question_uses_booked_service_context_for_short_follow_up(self) -> None:
+    async def test_answer_clinic_question_uses_fresh_service_context_for_duration_follow_up(self) -> None:
         state = PatientState(reason="Teeth whitening")
         tools = AssistantTools(
             state,
-            knowledge_articles=[
-                {
-                    "title": "Service pricing",
-                    "body": (
-                        "We offer two professional whitening options: an in-office treatment for $450 that "
-                        "delivers immediate results, or custom take-home trays for $250 for a more gradual "
-                        "whitening experience. Root canal therapy is $800 for anterior teeth and $1,100 for "
-                        "molars."
-                    ),
-                    "category": "Pricing",
+            settings={
+                "config_json": {
+                    "services": [
+                        {"name": "Teeth whitening", "price": 280, "duration": 30, "enabled": True},
+                        {"name": "Root canal", "price": 800, "duration": 90, "enabled": True},
+                    ]
                 }
-            ],
+            },
         )
 
-        result = await tools.answer_clinic_question("What type is better?")
+        state.remember_user_text("How much is teeth whitening?")
+        first = await tools.answer_clinic_question("How much is teeth whitening?")
+        state.remember_user_text("How long does it take?")
+        result = await tools.answer_clinic_question("How long does it take?")
 
-        self.assertIsNotNone(result)
-        self.assertIn("whitening options", result or "")
-        self.assertNotIn("Root canal", result or "")
+        self.assertEqual(first, "Teeth whitening is $280.")
+        self.assertEqual(result, "Teeth whitening usually takes about 30 minutes.")
 
     async def test_answer_clinic_question_falls_back_when_humanizer_errors(self) -> None:
         state = PatientState()

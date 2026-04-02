@@ -83,6 +83,7 @@ from config import (
     ENVIRONMENT,
 )
 from agent_wrapper import entrypoint, get_livekit_agent_name, load_agent_runtime_env
+from services.clinic_knowledge_service import process_pending_clinic_knowledge_sync_jobs
 
 load_agent_runtime_env()
 
@@ -91,6 +92,10 @@ load_agent_runtime_env()
 # =============================================================================
 
 _shutdown_event = asyncio.Event()
+_clinic_knowledge_sync_poll_seconds = max(
+    0,
+    int(os.getenv("CLINIC_KNOWLEDGE_SYNC_POLL_SECONDS", "45")),
+)
 
 
 def _handle_sigterm(signum, frame):
@@ -192,6 +197,24 @@ async def main():
     logger.info("[WORKER] Starting LiveKit worker...")
     logger.info(f"[WORKER] Agent name: {get_livekit_agent_name()}")
     logger.info(f"[WORKER] Environment: {ENVIRONMENT}")
+
+    sync_task: asyncio.Task | None = None
+
+    async def _clinic_knowledge_sync_loop() -> None:
+        while not _shutdown_event.is_set():
+            try:
+                processed = await process_pending_clinic_knowledge_sync_jobs(limit=5)
+                if processed:
+                    logger.info("[CLINIC KNOWLEDGE SYNC LOOP] processed=%s", processed)
+            except Exception:
+                logger.exception("[CLINIC KNOWLEDGE SYNC LOOP] iteration failed")
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=_clinic_knowledge_sync_poll_seconds)
+            except asyncio.TimeoutError:
+                continue
+
+    if _clinic_knowledge_sync_poll_seconds > 0:
+        sync_task = asyncio.create_task(_clinic_knowledge_sync_loop())
     
     # Run the server
     # This blocks until the server is shut down (SIGTERM or error)
@@ -203,6 +226,12 @@ async def main():
         logger.exception("[WORKER] Worker crashed with exception")
         raise
     finally:
+        if sync_task is not None:
+            sync_task.cancel()
+            try:
+                await sync_task
+            except asyncio.CancelledError:
+                pass
         logger.info("[WORKER] Worker stopped")
 
 

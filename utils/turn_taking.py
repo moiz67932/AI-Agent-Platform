@@ -13,6 +13,8 @@ from models.state import PatientState
 from services.extraction_service import extract_name_quick, extract_reason_quick
 from utils.agent_flow import has_date_reference, has_time_reference, resolve_confirmation_intent
 
+NAME_REPLY_RE = re.compile(r"^[A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){0,2}$")
+
 
 class CompletionLabel(str, Enum):
     INCOMPLETE = "INCOMPLETE"
@@ -533,10 +535,18 @@ class StreamingTurnTracker:
             # (≤4 word) utterance with no date/time/service/booking-intent content —
             # i.e. the agent asked for the name and the caller replied with just a name.
             from services.extraction_service import extract_name_quick as _eq
+            normalized_text = _normalize_text(text)
+            current_turn_service = extract_reason_quick(text, industry_type=self.industry_type)
             has_explicit_name = bool(_eq(text))
-            if not has_explicit_name and not has_date and not has_time and not snap.service:
-                tokens = _token_count(_normalize_text(text))
-                if tokens >= 1 and tokens <= 4 and not BOOKING_INTENT_RE.search(_normalize_text(text).lower()):
+            if (
+                not has_explicit_name
+                and not has_date
+                and not has_time
+                and not current_turn_service
+                and NAME_REPLY_RE.fullmatch(normalized_text)
+            ):
+                tokens = _token_count(normalized_text)
+                if tokens >= 1 and tokens <= 3 and not BOOKING_INTENT_RE.search(normalized_text.lower()):
                     has_explicit_name = True
             snap.expected_slot_status = "satisfied" if has_explicit_name else "unsatisfied"
             return
@@ -840,8 +850,15 @@ def choose_contextual_filler(snapshot: TurnTrackerSnapshot) -> Optional[str]:
         return None
     if snapshot.intent == "clinic_info":
         _filler_text = snapshot.current_turn_accumulated_text or ""
-        service = (snapshot.service or extract_reason_quick(_filler_text, industry_type="dental") or extract_reason_quick(_filler_text, industry_type="med_spa") or "").strip()
         text = (snapshot.current_turn_accumulated_text or snapshot.latest_finalized_text or "").lower()
+        if re.search(r"\b(?:services|service list|list of services|what do you offer|what services do you offer)\b", text):
+            return "Sure, let me pull the services we offer for you."
+        service = (
+            extract_reason_quick(_filler_text, industry_type="dental")
+            or extract_reason_quick(_filler_text, industry_type="med_spa")
+            or snapshot.service
+            or ""
+        ).strip()
         if service:
             return f"Sure, let me pull the details on {service.lower()} for you."
         if re.search(r"\b(doctor|dr\.?|dentist|provider|staff|team)\b", text):

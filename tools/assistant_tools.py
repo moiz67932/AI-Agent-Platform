@@ -51,6 +51,11 @@ from services.appointment_management_service import (
     reschedule_appointment,
 )
 from services.extraction_service import _iso, extract_name_quick, extract_reason_quick
+from services.clinic_knowledge_service import (
+    looks_like_clinic_info_question as clinic_knowledge_looks_like_clinic_info_question,
+    resolve_clinic_knowledge_answer,
+    verbalize_clinic_knowledge_answer,
+)
 from utils.contact_utils import parse_datetime_natural
 
 
@@ -1503,32 +1508,31 @@ class AssistantTools:
             " ".join((question or "").split()).strip(),
             getattr(self.state, "reason", None),
         )
-        return _looks_like_clinic_info_question(
-            contextual_question,
-            knowledge_articles=self._knowledge_articles,
-        )
+        return clinic_knowledge_looks_like_clinic_info_question(contextual_question)
 
-    def _compose_clinic_info_answer(self, question: str) -> Optional[str]:
-        return compose_clinic_info_answer(
+    async def _compose_clinic_info_answer(self, question: str):
+        return await resolve_clinic_knowledge_answer(
             question,
-            self._knowledge_articles,
-            fallback_service=getattr(self.state, "reason", None),
+            state=self.state,
+            clinic_info=self._clinic_info,
+            agent_settings=self._settings,
+            knowledge_articles=self._knowledge_articles,
+            industry_type=self._industry_type,
         )
 
-    async def _humanize_clinic_info_answer(self, question: str, answer: str) -> str:
-        cleaned = _normalize_voice_reply(answer)
-        if not cleaned:
-            return cleaned
+    async def _humanize_clinic_info_answer(self, question: str, answer) -> str:
+        if not answer:
+            return ""
         try:
-            humanized = await self._clinic_answer_humanizer(
+            return await verbalize_clinic_knowledge_answer(
                 question,
-                cleaned,
-                getattr(self.state, "reason", None),
+                answer,
+                humanizer=self._clinic_answer_humanizer,
+                fallback_service=answer.service_name or getattr(self.state, "reason", None),
             )
         except Exception as exc:
             logger.debug(f"[FAQ HUMANIZER] callback_fallback_due_to_error={exc}")
-            return cleaned
-        return _normalize_voice_reply(humanized or cleaned)
+            return _normalize_voice_reply(getattr(answer, "deterministic_text", ""))
 
     @llm.function_tool(
         description=(
@@ -1537,7 +1541,7 @@ class AssistantTools:
         )
     )
     async def search_clinic_info(self, question: str) -> str:
-        answer = self._compose_clinic_info_answer(question)
+        answer = await self._compose_clinic_info_answer(question)
         if answer:
             return await self._humanize_clinic_info_answer(question, answer)
         return _normalize_voice_reply(
@@ -1553,12 +1557,13 @@ class AssistantTools:
         if not self.can_answer_clinic_question(question):
             return None
 
-        answer = self._compose_clinic_info_answer(question)
+        answer = await self._compose_clinic_info_answer(question)
         if not answer:
-            answer = "I don't have that exact detail in my notes right now, but the office can confirm it for you."
-        answer = await self._humanize_clinic_info_answer(question, answer)
+            answer_text = "I don't have that exact detail in my notes right now, but the office can confirm it for you."
+        else:
+            answer_text = await self._humanize_clinic_info_answer(question, answer)
         if not include_follow_up:
-            return answer
+            return answer_text
 
         state = self.state
         state.anything_else_pending = True
@@ -1568,7 +1573,7 @@ class AssistantTools:
         state.user_goodbye_detected = False
         state.closing_state = "anything_else_pending"
         _refresh_memory()
-        return f"{answer} {ANYTHING_ELSE_FOLLOW_UP_TEXT}"
+        return f"{answer_text} {ANYTHING_ELSE_FOLLOW_UP_TEXT}"
 
     @llm.function_tool(
         description=(

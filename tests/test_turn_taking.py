@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from models.state import PatientState
 from utils.turn_taking import (
@@ -126,6 +128,18 @@ class TurnTakingPolicyTests(unittest.TestCase):
         self.assertEqual(decision.action, PolicyAction.FAST_PATH)
         self.assertEqual(decision.deterministic_route, "clinic_info.answer")
 
+    def test_service_list_filler_does_not_reuse_stale_service(self) -> None:
+        state = PatientState(reason="Teeth whitening")
+        snapshot, decision = preview_turn(
+            "Can you tell me the list of services that you provide?",
+            patient_state=state,
+            config=self.config,
+        )
+
+        self.assertEqual(snapshot.intent, "clinic_info")
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.filler_text, "Sure, let me pull the services we offer for you.")
+
     def test_pricing_fragment_routes_to_clinic_info_answer(self) -> None:
         state = PatientState(reason="Teeth whitening")
         snapshot, decision = preview_turn(
@@ -188,6 +202,25 @@ class TurnTakingPolicyTests(unittest.TestCase):
         self.assertEqual(decision.action, PolicyAction.FAST_PATH)
         self.assertEqual(decision.deterministic_route, "booking.ask_date_time")
         self.assertIn("What day and time would you like", decision.response_text or "")
+
+    def test_expected_name_slot_accepts_short_name_despite_existing_booking_context(self) -> None:
+        state = PatientState(
+            reason="Teeth whitening",
+            dt_local=datetime(2026, 4, 3, 15, 0, tzinfo=ZoneInfo("America/New_York")),
+            dt_text="tomorrow at 3pm",
+        )
+        snapshot, decision = preview_turn(
+            "Max",
+            patient_state=state,
+            expected_user_slot=ExpectedUserSlot.NAME.value,
+            config=self.config,
+        )
+
+        self.assertEqual(snapshot.expected_slot_status, "satisfied")
+        self.assertEqual(snapshot.completion_label, CompletionLabel.COMPLETE_AND_ACTIONABLE)
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.deterministic_route, "booking.capture_name")
+        self.assertTrue("slot:name_captured" in snapshot.completion_reasons or snapshot.caller_name == "Max")
 
     def test_expected_date_time_slot_hesitation_fragment_waits(self) -> None:
         state = PatientState(full_name="John", reason="Cleaning")

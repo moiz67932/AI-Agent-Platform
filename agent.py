@@ -243,7 +243,7 @@ WORKFLOW — 1 question at a time, 1-2 sentences max:
 4. Time -> call update_patient_record(time_suggestion="...") with natural language like "tomorrow at 2pm".
    - If slot is taken, the tool returns alternatives — offer them immediately.
    - If user says a month without a day (e.g. "February at 2pm") -> ask which day.
-5. ONLY after name AND reason AND time are ALL captured: ask "Can I use the number you're calling from for your appointment confirmation?"
+5. ONLY after name AND reason AND time are ALL captured: ask "Can I use the number you're calling from for your appointment confirmation and reminders?"
    - NEVER ask for phone confirmation until all three of name, reason, and time are confirmed.
    - If caller says "yes" / "sure" / "use this number" / "the one I'm calling from" -> call confirm_phone(confirmed=True) IMMEDIATELY. Do not ask again.
    - If caller says "no" or gives a different number -> call update_patient_record(phone=...).
@@ -1310,9 +1310,9 @@ async def _entrypoint_impl(ctx: JobContext):
         """Return False after disconnect has been signalled."""
         return not disconnect_event.is_set()
 
-    def _sanitize_spoken_output_for_tts(text: str) -> str:
+    def _sanitize_spoken_output_for_tts(text: str, *, skip_clinic_info_pruning: bool = False) -> str:
         cleaned = " ".join((text or "").split()).strip()
-        if not cleaned or not clinic_knowledge_articles:
+        if not cleaned or skip_clinic_info_pruning or not clinic_knowledge_articles:
             return cleaned
 
         user_question = (
@@ -1334,12 +1334,21 @@ async def _entrypoint_impl(ctx: JobContext):
             return sanitized
         return cleaned
 
-    def _safe_say(text: str, *, allow_interruptions: bool = True, add_to_chat_ctx: bool = True):
+    def _safe_say(
+        text: str,
+        *,
+        allow_interruptions: bool = True,
+        add_to_chat_ctx: bool = True,
+        skip_clinic_info_pruning: bool = False,
+    ):
         """Speech wrapper that silently no-ops after disconnect."""
         if not _is_session_alive():
             logger.debug(f"[SAFE_SAY] Suppressed post-disconnect say: '{text[:40]}'")
             return None
-        spoken_text = _sanitize_spoken_output_for_tts(text)
+        spoken_text = _sanitize_spoken_output_for_tts(
+            text,
+            skip_clinic_info_pruning=skip_clinic_info_pruning,
+        )
         try:
             return _session_say(
                 session,
@@ -1719,6 +1728,19 @@ async def _entrypoint_impl(ctx: JobContext):
             _interrupt_filler(force=True)
             route = str(decision.deterministic_route or "")
 
+            resolved_service = (turn_tracker.snapshot.service or "").strip()
+            if (
+                route.startswith("booking.")
+                and resolved_service
+                and resolved_service != (state.reason or "").strip()
+            ):
+                state.reason = resolved_service
+                state.duration_minutes = get_duration_for_service(resolved_service, schedule)
+                logger.info(
+                    f"[STATE PREFILL] reason_override={resolved_service} route={route}"
+                )
+                refresh_agent_memory()
+
             if route == "booking.capture_name":
                 capture_text = (
                     turn_tracker.snapshot.current_turn_accumulated_text
@@ -1782,7 +1804,7 @@ async def _entrypoint_impl(ctx: JobContext):
                     spoken_text = strip_duplicate_acknowledgement(spoken_text)
                 _apply_expected_slot_from_output(route=route, spoken_text=spoken_text)
                 if spoken_text:
-                    _safe_say(spoken_text)
+                    _safe_say(spoken_text, skip_clinic_info_pruning=True)
                 return True
 
             if route == "clinic_info.answer":
@@ -1810,7 +1832,7 @@ async def _entrypoint_impl(ctx: JobContext):
                     spoken_text = strip_duplicate_acknowledgement(spoken_text)
                 _apply_expected_slot_from_output(route=route, spoken_text=spoken_text)
                 if spoken_text:
-                    _safe_say(spoken_text)
+                    _safe_say(spoken_text, skip_clinic_info_pruning=True)
                 return True
 
             if mark_direct_response is not None:

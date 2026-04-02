@@ -19,6 +19,10 @@ _NAME_NOISE_PREFIX_RE = re.compile(
     r"^(?:(?:uh|um|er|ah|well|so|hello|hi|hey|yes|yeah|yep|no|nope|okay|ok)\s+)+",
     re.IGNORECASE,
 )
+_NON_NAME_INTRO_RE = re.compile(
+    r"^(?:i\s+am|i'm)\s+(?:asking|calling|looking|checking|wondering|trying|wanting|needing|interested)\b",
+    re.IGNORECASE,
+)
 _NAME_STOPWORDS = {
     "a", "am", "an", "and", "appointment", "around", "at", "book", "booking",
     "by", "call", "calling", "can", "clean", "cleaning", "close", "consult",
@@ -55,6 +59,8 @@ def _normalize_candidate_name(text: str) -> str:
 
 
 def _match_name_pattern(text: str) -> Optional[str]:
+    if _NON_NAME_INTRO_RE.search(text.strip()):
+        return None
     patterns = [
         r"\b(?:my\s+name\s+is|i\s+am|i'm|this\s+is|call\s+me)\s+([A-Za-z][A-Za-z\s\.'-]{2,})",
         r"^(?:it'?s|its)\s+([A-Za-z][A-Za-z\s\.'-]{2,})",

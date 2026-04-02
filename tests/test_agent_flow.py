@@ -15,6 +15,9 @@ class AgentFlowTests(unittest.TestCase):
     def test_extract_name_quick_reads_standalone_name_from_recent_fragments(self) -> None:
         self.assertEqual(extract_name_quick("PM. Yeah. John Abraham."), "John Abraham")
 
+    def test_extract_name_quick_ignores_service_guidance_phrase(self) -> None:
+        self.assertIsNone(extract_name_quick("I am asking about root canal."))
+
     def test_store_detected_phone_seeds_pending_patient_number(self) -> None:
         state = SimpleNamespace(
             detected_phone=None,
