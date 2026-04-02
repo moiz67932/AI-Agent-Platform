@@ -9,6 +9,8 @@ function serializeAppointment(row) {
   return {
     ...row,
     patient_phone: row.patient_phone || row.patient_phone_masked || null,
+    service_requested: row.service_requested || row.reason || null,
+    appointment_at: row.appointment_at || row.start_time || null,
   };
 }
 

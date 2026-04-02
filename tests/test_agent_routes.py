@@ -90,5 +90,39 @@ async def test_redeploy_agent_route_requires_existing_publish(monkeypatch: pytes
     assert exc_info.value.detail == "Agent is not published yet"
 
 
+@pytest.mark.asyncio
+async def test_redeploy_agent_route_persists_repr_when_exception_message_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_manager = SimpleNamespace(
+        redeploy_agent=AsyncMock(side_effect=RuntimeError()),
+        verify_remote_env=AsyncMock(),
+    )
+    update_calls: list[dict[str, object]] = []
+
+    async def fake_update_agent_fields(agent_id: str, fields: dict[str, object], connection=None):
+        update_calls.append(fields)
+        return {"id": agent_id, **fields}
+
+    monkeypatch.setattr(routes, "get_server_manager", lambda: fake_manager)
+    monkeypatch.setattr(
+        routes,
+        "get_agent",
+        AsyncMock(return_value={"id": RAW_AGENT_ID, "port": 8001, "subdomain": "demo-agent", "status": "live"}),
+    )
+    monkeypatch.setattr(routes, "get_agent_with_clinic", AsyncMock(return_value={"id": RAW_AGENT_ID}))
+    monkeypatch.setattr(routes, "update_agent_fields", fake_update_agent_fields)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.redeploy_agent(PREFIXED_AGENT_ID)
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Redeploy failed: RuntimeError()"
+    assert update_calls == [
+        {"status": "deploying", "deploy_error": None},
+        {"status": "error", "deploy_error": "RuntimeError()"},
+    ]
+
+
 def test_normalize_agent_id_accepts_prefixed_value() -> None:
     assert routes._normalize_agent_id(PREFIXED_AGENT_ID) == RAW_AGENT_ID

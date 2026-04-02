@@ -377,8 +377,9 @@ async def redeploy_agent(agent_id: str) -> dict[str, Any]:
         )
         await server_manager.verify_remote_env(agent_id, runtime_config, port, subdomain)
     except Exception as exc:
-        await update_agent_fields(agent_id, {"status": "error", "deploy_error": str(exc)})
-        raise HTTPException(status_code=500, detail=f"Redeploy failed: {exc}") from exc
+        error_text = str(exc).strip() or repr(exc)
+        await update_agent_fields(agent_id, {"status": "error", "deploy_error": error_text})
+        raise HTTPException(status_code=500, detail=f"Redeploy failed: {error_text}") from exc
 
     await update_agent_fields(agent_id, {"status": "live", "deploy_error": None})
     return {

@@ -132,8 +132,8 @@ async def fetch_clinic_context_optimized(
             select_fields = (
                 "clinic_id, agent_id, "
                 "clinics:clinic_id("
-                "  id, organization_id, name, timezone, default_phone_region, "
-                "  address, city, state, zip_code, country"
+                "  id, organization_id, name, industry, timezone, default_phone_region, "
+                "  address, city, state, zip_code, country, working_hours"
                 "), "
                 "agents:agent_id("
                 "  id, organization_id, clinic_id, name, default_language, status, "
@@ -191,8 +191,8 @@ async def fetch_clinic_context_optimized(
         # STRATEGY 2: Search clinics table directly
         def _query_clinics_direct():
             q = supabase.table("clinics").select(
-                "id, organization_id, name, timezone, default_phone_region, "
-                "address, city, state, zip_code, country, phone"
+                "id, organization_id, name, industry, timezone, default_phone_region, "
+                "address, city, state, zip_code, country, phone, working_hours"
             )
             if last10:
                 q = q.ilike("phone", f"%{last10}")
@@ -219,8 +219,8 @@ async def fetch_clinic_context_optimized(
         
         def _fetch_demo_clinic():
             return supabase.table("clinics").select(
-                "id, organization_id, name, timezone, default_phone_region, "
-                "address, city, state, zip_code, country"
+                "id, organization_id, name, industry, timezone, default_phone_region, "
+                "address, city, state, zip_code, country, working_hours"
             ).eq("id", DEMO_CLINIC_ID).limit(1).execute()
 
         demo_result = await asyncio.to_thread(_fetch_demo_clinic)
@@ -273,11 +273,11 @@ async def is_slot_free_supabase(
         if clinic_info:
             try:
                 from services.scheduling_service import load_schedule_from_settings
-                schedule = load_schedule_from_settings(clinic_info.get("settings"))
+                schedule = load_schedule_from_settings(clinic_info.get("settings"), clinic_info)
                 closed = schedule.get("closed_dates") or set()
             except Exception:
                 closed = set()
-            if start_dt.strftime("%Y-%m-%d") in closed:
+            if start_dt.date() in closed:
                 logger.info(f"[DB] 🛡️ Slot rejected: {start_dt.date()} is a closed date")
                 return False
 

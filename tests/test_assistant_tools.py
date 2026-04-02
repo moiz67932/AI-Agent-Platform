@@ -358,6 +358,26 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("$299", result)
         self.assertIn("single in-office session", result)
 
+    async def test_search_clinic_info_humanizes_compact_service_pricing_without_llm(self) -> None:
+        state = PatientState(reason="Teeth whitening")
+        tools = AssistantTools(
+            state,
+            knowledge_articles=[
+                {
+                    "title": "Teeth whitening pricing",
+                    "body": "Teeth whitening: $280 (30 minutes).",
+                    "category": "Pricing",
+                }
+            ],
+        )
+
+        result = await tools.search_clinic_info("What is the pricing of teeth whitening?")
+
+        self.assertEqual(
+            result,
+            "Teeth whitening is $280, and it usually takes about 30 minutes.",
+        )
+
     async def test_search_clinic_info_prefers_pricing_article_over_policy_for_whitening(self) -> None:
         state = PatientState(reason="Teeth whitening")
         tools = AssistantTools(
@@ -474,6 +494,35 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Visa", result)
         self.assertNotIn("Delta Dental", result)
 
+    async def test_search_clinic_info_uses_custom_humanizer_for_general_faq(self) -> None:
+        state = PatientState()
+        humanizer = AsyncMock(
+            return_value="We accept cash, Visa, MasterCard, Amex, and CareCredit."
+        )
+        tools = AssistantTools(
+            state,
+            knowledge_articles=[
+                {
+                    "title": "Methods",
+                    "body": "We accept Cash, Visa, MC, Amex, and CareCredit financing.",
+                    "category": "Payment",
+                }
+            ],
+            clinic_answer_humanizer=humanizer,
+        )
+
+        result = await tools.search_clinic_info("What payment methods do you accept?")
+
+        self.assertEqual(
+            result,
+            "We accept cash, Visa, MasterCard, Amex, and CareCredit.",
+        )
+        humanizer.assert_awaited_once()
+        asked_question, raw_answer, fallback_service = humanizer.await_args.args
+        self.assertEqual(asked_question, "What payment methods do you accept?")
+        self.assertIn("CareCredit", raw_answer)
+        self.assertIsNone(fallback_service)
+
     async def test_search_clinic_info_returns_full_staff_details_without_cutting_off_title(self) -> None:
         state = PatientState()
         tools = AssistantTools(
@@ -539,6 +588,29 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertIn("whitening options", result or "")
         self.assertNotIn("Root canal", result or "")
+
+    async def test_answer_clinic_question_falls_back_when_humanizer_errors(self) -> None:
+        state = PatientState()
+        tools = AssistantTools(
+            state,
+            knowledge_articles=[
+                {
+                    "title": "Methods",
+                    "body": "We accept Cash, Visa, MC, Amex, and CareCredit financing.",
+                    "category": "Payment",
+                }
+            ],
+            clinic_answer_humanizer=AsyncMock(side_effect=RuntimeError("formatter unavailable")),
+        )
+
+        result = await tools.answer_clinic_question(
+            "What payment methods do you accept?",
+            include_follow_up=True,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIn("We accept Cash, Visa, MC, Amex, and CareCredit financing.", result or "")
+        self.assertIn("Is there anything else I can help you with today?", result or "")
 
     def test_prune_clinic_response_for_tts_scopes_pricing_to_requested_service(self) -> None:
         pruned = prune_clinic_response_for_tts(

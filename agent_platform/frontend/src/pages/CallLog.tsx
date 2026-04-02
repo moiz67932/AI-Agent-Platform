@@ -6,6 +6,15 @@ import { useCalls } from '@/hooks/useCalls';
 import { useAgents } from '@/hooks/useAgents';
 import { formatDuration, maskPhone, cn } from '@/lib/utils';
 
+function getDateFilters(range: string) {
+  const end = new Date();
+  const start = new Date(end);
+  if (range === '7d') start.setDate(end.getDate() - 6);
+  else if (range === '30d') start.setDate(end.getDate() - 29);
+  start.setHours(0, 0, 0, 0);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 function OutcomeDot({ outcome }: { outcome: string }) {
   const map: Record<string, { bg: string; text: string; label: string }> = {
     booked: { bg: 'bg-dash-green-bg border-dash-green-b', text: 'text-dash-green', label: 'Booked' },
@@ -29,11 +38,14 @@ export default function CallLog() {
   const [agentId, setAgentId] = useState(searchParams.get('agent') || '');
   const [dateRange, setDateRange] = useState('today');
   const [page, setPage] = useState(1);
+  const range = getDateFilters(dateRange);
 
   const { data: agents } = useAgents();
   const { data: calls, isLoading } = useCalls({
     outcome: outcome === 'all' ? undefined : outcome,
     agent_id: agentId || undefined,
+    start_date: range.start,
+    end_date: range.end,
     page,
     per_page: 20,
   });
@@ -130,9 +142,12 @@ export default function CallLog() {
                           'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0',
                           ['bg-purple-500','bg-blue-500','bg-emerald-500','bg-amber-500','bg-pink-500'][i % 5]
                         )}>
-                          {(call.caller_number || '??').slice(-2)}
+                          {(call.caller_name || call.caller_number || '??').slice(-2)}
                         </div>
-                        <span className="text-sm font-mono text-dash-t1">{call.caller_number ? maskPhone(call.caller_number) : '\u2014'}</span>
+                        <div>
+                          <p className="text-sm font-medium text-dash-t1">{call.caller_name || 'Unknown caller'}</p>
+                          <span className="text-xs font-mono text-dash-t3">{call.caller_number ? maskPhone(call.caller_number) : '\u2014'}</span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-2.5">

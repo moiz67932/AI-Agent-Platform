@@ -552,8 +552,12 @@ function Step6Knowledge() {
     setKnowledge({ articles });
   };
 
+  useEffect(() => {
+    save();
+  }, [answers, enabled, data.industry]);
+
   return (
-    <div className="space-y-6" onBlur={save}>
+    <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-extrabold text-dash-t1">Teach Your Agent</h2>
         <p className="mt-1 text-dash-t3">Add FAQs and information your agent should know</p>
@@ -702,11 +706,6 @@ export default function Onboarding() {
     try {
       if (!user?.id) throw new Error('Not authenticated');
 
-      const workingHours = Object.entries(data.hours).reduce<Record<string, object>>((acc, [day, sched]) => {
-        if (sched.open) acc[day] = { start: sched.start, end: sched.end, open: true };
-        return acc;
-      }, {});
-
       const result = await api.post<{ data: { agent_id: string; clinic_id: string; organization_id: string; phone_number?: string } }>(
         '/api/onboarding/complete',
         {
@@ -723,7 +722,7 @@ export default function Onboarding() {
             website: data.business.website,
             timezone: data.business.timezone,
           },
-          hours: workingHours,
+          hours: data.hours,
           services: data.services,
           agentConfig: {
             name: data.agent.name,

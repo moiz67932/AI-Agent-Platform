@@ -56,9 +56,14 @@ function KpiCard({ label, value, trend, icon: Icon, color }: {
 
 export default function Analytics() {
   const [period, setPeriod] = useState('7d');
+  const [agentId, setAgentId] = useState('');
   const range = useMemo(() => getPeriodRange(period), [period]);
   const { data: agents } = useAgents();
-  const { data: analytics, isLoading } = useAnalytics({ start_date: range.start, end_date: range.end });
+  const { data: analytics, isLoading } = useAnalytics({
+    start_date: range.start,
+    end_date: range.end,
+    agent_id: agentId || undefined,
+  });
 
   const chartData = analytics?.calls_by_day?.map(day => ({
     date: new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' }),
@@ -67,44 +72,57 @@ export default function Analytics() {
     booked: day.booked,
   })) ?? [];
 
-  const outcomeData = analytics?.outcomes
-    ? Object.entries(analytics.outcomes).map(([key, val]) => ({
-        name: key.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
-        value: val as number,
-        color: OUTCOME_COLORS[key] || '#AAA8BE',
-      }))
-    : [];
+  const outcomeSource = analytics?.outcomes
+    ? Object.entries(analytics.outcomes).map(([key, value]) => ({ outcome: key, count: Number(value) || 0 }))
+    : (analytics?.outcome_breakdown ?? []);
+
+  const outcomeData = outcomeSource
+    .map(({ outcome, count }) => ({
+      name: outcome.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
+      value: count,
+      color: OUTCOME_COLORS[outcome] || '#AAA8BE',
+    }))
+    .filter((entry) => entry.value > 0);
 
   const totalOutcomes = outcomeData.reduce((s, d) => s + d.value, 0);
 
-  const hourlyData = analytics?.calls_by_hour
-    ? Array.from({ length: 24 }, (_, i) => ({
-        hour: i,
-        label: i % 4 === 0 ? `${i === 0 ? '12' : i > 12 ? i - 12 : i}${i < 12 ? 'am' : 'pm'}` : '',
-        calls: (analytics.calls_by_hour as Record<number, number>)[i] ?? 0,
-      }))
-    : Array.from({ length: 24 }, (_, i) => ({
-        hour: i,
-        label: i % 4 === 0 ? `${i === 0 ? '12' : i > 12 ? i - 12 : i}${i < 12 ? 'am' : 'pm'}` : '',
-        calls: 0,
-      }));
+  const hourlyMap = new Map((analytics?.calls_by_hour ?? []).map((entry) => [entry.hour, entry.count]));
+  const hourlyData = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    label: i % 4 === 0 ? `${i === 0 ? '12' : i > 12 ? i - 12 : i}${i < 12 ? 'am' : 'pm'}` : '',
+    calls: hourlyMap.get(i) ?? 0,
+  }));
+
+  const serviceData = analytics?.service_breakdown ?? [];
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-xl font-extrabold text-dash-t1">Analytics</h1>
           <p className="text-xs text-dash-t3 mt-0.5">Call performance and booking metrics</p>
         </div>
-        <div className="flex rounded-lg border border-dash-border overflow-hidden">
-          {['7d', '30d', '90d'].map(p => (
-            <button key={p} onClick={() => setPeriod(p)} className={cn(
-              'text-xs font-semibold px-3 py-1.5',
-              period === p ? 'bg-dash-blue text-white' : 'bg-dash-card text-dash-t2 hover:text-dash-t1'
-            )}>
-              {p === '7d' ? 'This week' : p === '30d' ? 'This month' : 'Last 3 months'}
-            </button>
-          ))}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <select
+            value={agentId || 'all'}
+            onChange={(event) => setAgentId(event.target.value === 'all' ? '' : event.target.value)}
+            className="text-xs font-medium text-dash-t2 bg-dash-card border border-dash-border rounded-lg px-3 py-2 outline-none"
+          >
+            <option value="all">All agents</option>
+            {agents?.map((agent) => (
+              <option key={agent.id} value={agent.id}>{agent.name}</option>
+            ))}
+          </select>
+          <div className="flex rounded-lg border border-dash-border overflow-hidden">
+            {['7d', '30d', '90d'].map(p => (
+              <button key={p} onClick={() => setPeriod(p)} className={cn(
+                'text-xs font-semibold px-3 py-1.5',
+                period === p ? 'bg-dash-blue text-white' : 'bg-dash-card text-dash-t2 hover:text-dash-t1'
+              )}>
+                {p === '7d' ? 'This week' : p === '30d' ? 'This month' : 'Last 3 months'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -198,6 +216,46 @@ export default function Analytics() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-dash-border bg-dash-card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-dash-t1">Service breakdown</h3>
+          <span className="text-[11px] text-dash-t3">{serviceData.length} service{serviceData.length === 1 ? '' : 's'}</span>
+        </div>
+        {serviceData.length === 0 ? (
+          <div className="flex items-center justify-center h-32">
+            <p className="text-sm text-dash-t3">No booking data available</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-dash-border">
+                  <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-widest text-dash-t3">Service</th>
+                  <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-widest text-dash-t3">Requests</th>
+                  <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-widest text-dash-t3">Booked</th>
+                  <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-widest text-dash-t3">Rate</th>
+                  <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-widest text-dash-t3">Avg duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serviceData.map((service) => {
+                  const rate = service.requested > 0 ? Math.round((service.booked / service.requested) * 100) : 0;
+                  return (
+                    <tr key={service.service} className="border-b border-dash-border last:border-0">
+                      <td className="px-2 py-3 text-sm font-medium text-dash-t1">{service.service}</td>
+                      <td className="px-2 py-3 text-right text-sm text-dash-t2">{service.requested}</td>
+                      <td className="px-2 py-3 text-right text-sm text-dash-t2">{service.booked}</td>
+                      <td className="px-2 py-3 text-right text-sm text-dash-t2">{rate}%</td>
+                      <td className="px-2 py-3 text-right text-sm text-dash-t2">{service.avg_duration ? formatDuration(service.avg_duration) : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

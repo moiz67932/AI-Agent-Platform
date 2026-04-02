@@ -31,21 +31,27 @@ function getTodayRange() {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function normalizeSparkline(values: number[]) {
+  if (!values.length) return [24, 36, 42, 38, 48, 56, 64];
+  const max = Math.max(...values, 1);
+  return values.map((value) => Math.max(18, Math.round((value / max) * 100)));
+}
+
 /* ── Badge ── */
 function OutcomeDot({ outcome }: { outcome: string }) {
   const colors: Record<string, string> = {
     booked: 'bg-dash-green text-dash-green',
-    info: 'bg-dash-blue text-dash-blue',
+    info_only: 'bg-dash-blue text-dash-blue',
     missed: 'bg-dash-pink text-dash-pink',
   };
-  const c = colors[outcome] || colors.info;
+  const c = colors[outcome] || colors.info_only;
   const bg = outcome === 'booked' ? 'bg-dash-green-bg border-dash-green-b' :
              outcome === 'missed' ? 'bg-dash-pink-bg border-dash-pink-b' :
              'bg-dash-blue-bg border-dash-blue-b';
   return (
     <span className={cn('inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border', bg, c.split(' ')[1])}>
       <span className={cn('w-1.5 h-1.5 rounded-full', c.split(' ')[0])} />
-      {outcome.charAt(0).toUpperCase() + outcome.slice(1)}
+      {outcome.replace('_', ' ').replace(/^\w/, (char) => char.toUpperCase())}
     </span>
   );
 }
@@ -153,6 +159,11 @@ export default function Dashboard() {
   const weekTotalCalls = weekAnalytics?.total_calls ?? 0;
   const weekBooked = weekAnalytics?.total_bookings ?? 0;
   const weekRate = weekTotalCalls > 0 ? Math.round((weekBooked / weekTotalCalls) * 100) : 0;
+  const weekCallSeries = weekAnalytics?.calls_by_day?.map((day) => day.calls) ?? [];
+  const weekBookingSeries = weekAnalytics?.calls_by_day?.map((day) => day.booked) ?? [];
+  const weekRateSeries = weekAnalytics?.calls_by_day?.map((day) => (day.calls > 0 ? Math.round((day.booked / day.calls) * 100) : 0)) ?? [];
+  const sourceBreakdown = weekAnalytics?.source_breakdown ?? [];
+  const serviceDays = weekAnalytics?.service_days ?? [];
 
   return (
     <div className="space-y-5">
@@ -178,7 +189,7 @@ export default function Dashboard() {
           label="Total calls today"
           value={todayAnalytics?.total_calls ?? 0}
           trend={todayAnalytics?.total_calls ? `${todayAnalytics.total_calls} call${todayAnalytics.total_calls !== 1 ? 's' : ''} today` : 'No calls yet today'}
-          barData={[30, 45, 55, 40, 60, 80, 95]}
+          barData={normalizeSparkline(weekCallSeries)}
           barColor="text-dash-blue"
           icon={Phone}
           iconBg="bg-dash-blue-bg text-dash-blue"
@@ -187,7 +198,7 @@ export default function Dashboard() {
           label="Appointments booked"
           value={todayAnalytics?.total_bookings ?? 0}
           trend={todayAnalytics?.total_bookings ? `${todayAnalytics.total_bookings} booked today` : 'No bookings yet today'}
-          barData={[40, 55, 30, 70, 50, 80, 90]}
+          barData={normalizeSparkline(weekBookingSeries)}
           barColor="text-dash-green"
           icon={Calendar}
           iconBg="bg-dash-green-bg text-dash-green"
@@ -196,33 +207,36 @@ export default function Dashboard() {
           label="Booking rate"
           value={todayAnalytics?.total_calls ? `${Math.round(((todayAnalytics.total_bookings ?? 0) / todayAnalytics.total_calls) * 100)}%` : '—'}
           trend={todayAnalytics?.total_calls ? 'Based on today\'s calls' : 'No calls yet today'}
-          barData={[45, 50, 35, 65, 55, 75, 85]}
+          barData={normalizeSparkline(weekRateSeries)}
           barColor="text-dash-pink"
           icon={TrendingUp}
           iconBg="bg-dash-pink-bg text-dash-pink"
         />
         {/* Call sources */}
         <motion.div variants={item} className="rounded-xl border border-dash-border bg-dash-card p-5">
-          <span className="text-xs font-medium text-dash-t2 mb-4 block">Call sources</span>
-          <div className="space-y-2.5">
-            {[
-              { letter: 'G', label: 'Google', pct: 61, color: 'bg-dash-blue', textColor: 'text-dash-blue' },
-              { letter: 'R', label: 'Referral', pct: 20, color: 'bg-dash-green', textColor: 'text-dash-green' },
-              { letter: 'W', label: 'Walk-in', pct: 12, color: 'bg-dash-amber', textColor: 'text-dash-amber' },
-              { letter: 'O', label: 'Other', pct: 7, color: 'bg-dash-purple', textColor: 'text-dash-purple' },
-            ].map(s => (
-              <div key={s.label} className="flex items-center gap-2.5">
-                <div className={cn('w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white', s.color)}>
-                  {s.letter}
-                </div>
-                <span className="text-xs text-dash-t2 flex-1">{s.label}</span>
-                <div className="w-20 h-1.5 bg-dash-border rounded-full overflow-hidden">
-                  <div className={cn('h-full rounded-full', s.color)} style={{ width: `${s.pct}%` }} />
-                </div>
-                <span className="text-xs font-bold text-dash-t1 w-8 text-right">{s.pct}%</span>
-              </div>
-            ))}
-          </div>
+          <span className="text-xs font-medium text-dash-t2 mb-4 block">Booking sources</span>
+          {!sourceBreakdown.length ? (
+            <p className="text-xs text-dash-t3">Source data will appear as appointments are created.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {sourceBreakdown.map((source, index) => {
+                const palette = ['bg-dash-blue', 'bg-dash-green', 'bg-dash-amber', 'bg-dash-purple'][index % 4];
+                const label = source.source.replace('_', ' ').replace(/^\w/, (char) => char.toUpperCase());
+                return (
+                  <div key={source.source} className="flex items-center gap-2.5">
+                    <div className={cn('w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white', palette)}>
+                      {label.charAt(0)}
+                    </div>
+                    <span className="text-xs text-dash-t2 flex-1">{label}</span>
+                    <div className="w-20 h-1.5 bg-dash-border rounded-full overflow-hidden">
+                      <div className={cn('h-full rounded-full', palette)} style={{ width: `${source.pct}%` }} />
+                    </div>
+                    <span className="text-xs font-bold text-dash-t1 w-8 text-right">{source.pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </motion.div>
       </motion.div>
 
@@ -235,7 +249,7 @@ export default function Dashboard() {
               <h3 className="text-sm font-bold text-dash-t1">Recent calls</h3>
               {hasCalls ? (
                 <span className="text-[10px] font-semibold text-dash-blue bg-dash-blue-bg border border-dash-blue-b px-2 py-0.5 rounded-full">
-                  {recentCalls.data.length} today
+                  {todayAnalytics?.total_calls ?? recentCalls.data.length} today
                 </span>
               ) : null}
             </div>
@@ -259,9 +273,9 @@ export default function Dashboard() {
             </div>
           ) : (
             recentCalls.data.slice(0, 4).map((call: any, i: number) => {
-              const name = call.patient_name || (call.caller_number ? maskPhone(call.caller_number) : 'Unknown');
+              const name = call.caller_name || call.appointment?.patient_name || (call.caller_number ? maskPhone(call.caller_number) : 'Unknown');
               const agentName = call.agent?.name || '';
-              const outcome = call.outcome || 'info';
+              const outcome = call.outcome || 'info_only';
               const dur = call.duration_seconds ? formatDuration(call.duration_seconds) : '\u2014';
               const t = call.started_at ? relativeTime(call.started_at) : '';
               const init = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -336,13 +350,15 @@ export default function Dashboard() {
                 <span className="text-label uppercase text-dash-t3 tracking-widest">Calls this week</span>
               </div>
               <div className="flex items-end gap-1 h-10">
-                {[40, 55, 45, 60, 50, 70, 85].map((h, i) => (
-                  <div key={i} className={cn('flex-1 rounded-sm', i === 6 ? 'bg-dash-blue' : 'bg-dash-blue/20')} style={{ height: `${h}%` }} />
+                {normalizeSparkline(weekCallSeries).map((h, i, all) => (
+                  <div key={i} className={cn('flex-1 rounded-sm', i === all.length - 1 ? 'bg-dash-blue' : 'bg-dash-blue/20')} style={{ height: `${h}%` }} />
                 ))}
               </div>
               <div className="flex justify-between mt-1">
-                {['S','M','T','W','T','F','S'].map((d, i) => (
-                  <span key={i} className="text-[8px] text-dash-t3 flex-1 text-center">{d}</span>
+                {(weekAnalytics?.calls_by_day?.length ? weekAnalytics.calls_by_day : Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000).toISOString() }))).map((day, i) => (
+                  <span key={i} className="text-[8px] text-dash-t3 flex-1 text-center">
+                    {new Date(day.date).toLocaleDateString('en-US', { weekday: 'narrow' })}
+                  </span>
                 ))}
               </div>
               <div className="flex items-center justify-between mt-3 pt-2 border-t border-dash-border">
@@ -373,7 +389,7 @@ export default function Dashboard() {
                 <p className="text-xs text-dash-t3 text-center py-2">No appointments scheduled today</p>
               ) : (
                 todayAppointments.slice(0, 3).map((u: any) => {
-                  const apptDate = u.appointment_at ? new Date(u.appointment_at) : null;
+                  const apptDate = (u.start_time || u.appointment_at) ? new Date(u.start_time || u.appointment_at) : null;
                   const timeStr = apptDate ? apptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }) : '';
                   const period = apptDate ? (apptDate.getHours() < 12 ? 'AM' : 'PM') : '';
                   return (
@@ -385,7 +401,7 @@ export default function Dashboard() {
                       <div className="w-px bg-dash-border self-stretch" />
                       <div>
                         <p className="text-xs font-semibold text-dash-t1">{u.patient_name || u.caller_name || 'Unknown'}</p>
-                        {u.service_requested && <p className="text-[10px] text-dash-t3">{u.service_requested}</p>}
+                        {(u.service_requested || u.reason) && <p className="text-[10px] text-dash-t3">{u.service_requested || u.reason}</p>}
                       </div>
                     </div>
                   );
@@ -411,7 +427,7 @@ export default function Dashboard() {
               <thead>
                 <tr className="bg-dash-surface border-b border-dash-border">
                   <th className="text-label uppercase text-dash-t3 tracking-widest px-5 py-2.5 font-semibold">Service</th>
-                  {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                  {(serviceDays.length ? serviceDays : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']).map(d => (
                     <th key={d} className="text-label uppercase text-dash-t3 tracking-widest px-4 py-2.5 font-semibold text-center">{d}</th>
                   ))}
                 </tr>

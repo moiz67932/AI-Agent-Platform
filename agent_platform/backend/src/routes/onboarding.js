@@ -1,5 +1,13 @@
 import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
+import {
+  normalizeServices,
+  normalizeWorkingHours,
+  syncClinicHoursTable,
+  syncClinicHolidaysTable,
+  syncGeneratedKnowledgeArticles,
+  toKnowledgeArticleRecord,
+} from '../lib/clinicConfig.js';
 
 const router = Router();
 const DEPLOY_API_URL = (process.env.DEPLOY_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
@@ -13,6 +21,9 @@ router.post('/complete', async (req, res, next) => {
   try {
     const { industry, businessInfo, hours, services, agentConfig, knowledgeBase, phoneNumber } = req.body;
     const userId = req.user.id;
+    const normalizedHours = normalizeWorkingHours(hours);
+    const normalizedServices = normalizeServices(services);
+    const closedDates = Array.isArray(agentConfig?.closed_dates) ? agentConfig.closed_dates : [];
 
     // 1. Create or update organization
     let orgId = req.orgId;
@@ -43,7 +54,7 @@ router.post('/complete', async (req, res, next) => {
         zip: businessInfo.zip,
         country: businessInfo.country || 'US',
         website: businessInfo.website,
-        working_hours: hours,
+        working_hours: normalizedHours.full,
       })
       .select()
       .single();
@@ -76,7 +87,9 @@ router.post('/complete', async (req, res, next) => {
 
     // 4. Create agent_settings
     const treatmentDurations = {};
-    services.forEach(s => { treatmentDurations[s.name] = s.duration; });
+    normalizedServices.forEach((service) => {
+      treatmentDurations[service.name] = service.duration;
+    });
 
     const { error: settingsError } = await supabase
       .from('agent_settings')
@@ -87,8 +100,11 @@ router.post('/complete', async (req, res, next) => {
         persona_tone: agentConfig.tone || 'warm',
         voice_id: agentConfig.voice_id || 'ava',
         config_json: {
+          industry_type: industry,
+          working_hours: normalizedHours.compact,
+          closed_dates: closedDates,
           treatment_durations: treatmentDurations,
-          services,
+          services: normalizedServices,
           emergency_handling: agentConfig.emergency_handling || false,
           emergency_script: agentConfig.emergency_script,
           collect_insurance: agentConfig.collect_insurance || false,
@@ -99,17 +115,39 @@ router.post('/complete', async (req, res, next) => {
       });
     if (settingsError) throw settingsError;
 
-    // 5. Insert knowledge articles
+    await syncClinicHoursTable(supabase, {
+      organizationId: orgId,
+      clinicId: clinic.id,
+      fullHours: normalizedHours.full,
+    });
+
+    await syncClinicHolidaysTable(supabase, {
+      organizationId: orgId,
+      clinicId: clinic.id,
+      closedDates,
+    });
+
+    await syncGeneratedKnowledgeArticles(supabase, {
+      organizationId: orgId,
+      clinicId: clinic.id,
+      fullHours: normalizedHours.full,
+      services: normalizedServices,
+    });
+
+    // 5. Insert FAQ knowledge articles
     if (knowledgeBase?.articles?.length) {
-      const articles = knowledgeBase.articles.map(a => ({
-        organization_id: orgId,
-        clinic_id: clinic.id,
-        title: a.title,
-        body: a.body,
-        category: a.category || 'FAQ',
-        status: 'active',
-      }));
-      await supabase.from('knowledge_articles').insert(articles);
+      const articles = knowledgeBase.articles.map((article) =>
+        toKnowledgeArticleRecord({
+          organization_id: orgId,
+          clinic_id: clinic.id,
+          title: article.title,
+          body: article.body,
+          category: article.category || 'FAQ',
+          status: 'active',
+        })
+      );
+      const { error: articleError } = await supabase.from('knowledge_articles').insert(articles);
+      if (articleError) throw articleError;
     }
 
     // 6. Provision phone number

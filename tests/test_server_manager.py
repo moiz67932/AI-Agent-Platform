@@ -43,6 +43,28 @@ def test_clear_remote_runtime_bundle_removes_all_runtime_paths(monkeypatch: pyte
     assert check is False
 
 
+def test_reload_runtime_processes_requires_supervisor_commands_to_succeed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AgentServerManager.__new__(AgentServerManager)
+    manager.agents_domain = "localhost"
+    commands: list[tuple[str, bool]] = []
+
+    def fake_exec(client, command: str, *, check: bool = True) -> str:
+        commands.append((command, check))
+        return ""
+
+    monkeypatch.setattr(manager, "_exec", fake_exec)
+
+    manager._reload_runtime_processes(object(), "agent-123")
+
+    assert commands == [
+        ("supervisorctl reread", True),
+        ("supervisorctl update", True),
+        ("supervisorctl restart agent-agent-123-worker agent-agent-123-web", True),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_verify_remote_env_detects_sip_password_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = AgentServerManager.__new__(AgentServerManager)

@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
+import {
+  isBookedAppointmentStatus,
+  matchAppointmentToCall,
+  normalizeCallOutcome,
+} from '../lib/callData.js';
 
 const router = Router();
+
+const WEEKDAY_ORDER = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function emptyAnalytics() {
   return {
@@ -13,24 +20,51 @@ function emptyAnalytics() {
     missed_calls: 0,
     calls_by_day: [],
     calls_by_hour: [],
-    calls_by_weekday: [],
+    calls_by_weekday: WEEKDAY_ORDER.map((day) => ({ day, count: 0 })),
     outcome_breakdown: [],
+    outcomes: {},
     service_breakdown: [],
+    services_by_day: [],
+    service_days: [],
+    source_breakdown: [],
     agent_breakdown: [],
   };
+}
+
+function startOfDayIso(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+}
+
+function formatDayKey(value) {
+  return value.toISOString().slice(0, 10);
+}
+
+function createDaySeries(startDate, endDate) {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+
+  const days = [];
+  for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+    days.push(new Date(cursor));
+  }
+  return days;
 }
 
 router.get('/', async (req, res, next) => {
   try {
     const { start_date, end_date, agent_id } = req.query;
-    const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const startDate = start_date || startOfDayIso(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const endDate = end_date || new Date().toISOString();
 
-    let scopedAgentId = null;
+    let scopedAgent = null;
     if (agent_id) {
       const { data: agent, error: agentError } = await supabase
         .from('agents')
-        .select('id')
+        .select('id, clinic_id')
         .eq('id', agent_id)
         .eq('organization_id', req.orgId)
         .single();
@@ -40,128 +74,181 @@ router.get('/', async (req, res, next) => {
         return res.json({ data: emptyAnalytics() });
       }
 
-      scopedAgentId = agent.id;
+      scopedAgent = agent;
     }
 
-    let callQuery = supabase
-      .from('call_sessions')
-      .select('id, agent_id, outcome, duration_seconds, started_at')
+    let callsQuery = supabase
+      .from('call_logs')
+      .select('id, agent_id, clinic_id, status, duration_seconds, created_at, ended_at')
       .eq('organization_id', req.orgId)
-      .gte('started_at', startDate)
-      .lte('started_at', endDate);
+      .gte('created_at', startDate)
+      .lte('created_at', endDate)
+      .order('created_at', { ascending: true });
 
-    if (scopedAgentId) {
-      callQuery = callQuery.eq('agent_id', scopedAgentId);
+    if (scopedAgent?.id) {
+      callsQuery = callsQuery.eq('agent_id', scopedAgent.id);
     }
 
-    const { data: calls, error: callsError } = await callQuery;
+    const { data: calls, error: callsError } = await callsQuery;
     if (callsError) throw callsError;
 
-    const allCalls = calls || [];
-    const totalCalls = allCalls.length;
-    const bookedCalls = allCalls.filter((call) => call.outcome === 'booked');
-    const answeredCalls = allCalls.filter((call) => call.outcome !== 'missed');
-    const durations = allCalls.map((call) => call.duration_seconds || 0);
+    let appointmentsQuery = supabase
+      .from('appointments')
+      .select('id, agent_id, clinic_id, status, source, reason, service_requested, created_at, start_time, appointment_at, call_log_id, patient_phone_masked, caller_phone')
+      .eq('organization_id', req.orgId)
+      .gte('created_at', startDate)
+      .lte('created_at', endDate)
+      .order('created_at', { ascending: true });
 
+    if (scopedAgent?.id) {
+      if (scopedAgent.clinic_id) {
+        appointmentsQuery = appointmentsQuery.or(`agent_id.eq.${scopedAgent.id},and(agent_id.is.null,clinic_id.eq.${scopedAgent.clinic_id})`);
+      } else {
+        appointmentsQuery = appointmentsQuery.eq('agent_id', scopedAgent.id);
+      }
+    }
+
+    const { data: appointments, error: appointmentError } = await appointmentsQuery;
+    if (appointmentError) throw appointmentError;
+
+    const allCalls = calls || [];
+    const allAppointments = appointments || [];
+    const matchedAppointmentsByCall = new Map();
+    for (const call of allCalls) {
+      matchedAppointmentsByCall.set(call.id, matchAppointmentToCall(call, allAppointments));
+    }
+
+    const durations = [];
     const byDay = new Map();
     const byHour = new Map();
     const byWeekday = new Map();
-    const outcomeCount = new Map();
+    const outcomes = new Map();
     const agentBreakdown = new Map();
-    const weekdayOrder = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     for (const call of allCalls) {
-      const startedAt = new Date(call.started_at);
-      const dayKey = call.started_at?.slice(0, 10);
-      const hourKey = startedAt.getHours();
-      const weekdayKey = weekdayOrder[startedAt.getDay()];
+      const createdAt = new Date(call.created_at);
+      if (Number.isNaN(createdAt.getTime())) continue;
 
-      if (dayKey) {
-        const existingDay = byDay.get(dayKey) || { date: dayKey, calls: 0, booked: 0 };
-        existingDay.calls += 1;
-        if (call.outcome === 'booked') existingDay.booked += 1;
-        byDay.set(dayKey, existingDay);
+      const normalizedOutcome = normalizeCallOutcome(call.status);
+      const duration = call.duration_seconds ?? (
+        call.ended_at ? Math.max(0, Math.round((new Date(call.ended_at).getTime() - createdAt.getTime()) / 1000)) : 0
+      );
+      const dayKey = formatDayKey(createdAt);
+      const dayEntry = byDay.get(dayKey) || { date: dayKey, calls: 0, booked: 0 };
+
+      dayEntry.calls += 1;
+      if (normalizedOutcome === 'booked' || matchedAppointmentsByCall.get(call.id)) {
+        dayEntry.booked += 1;
       }
+      byDay.set(dayKey, dayEntry);
 
-      byHour.set(hourKey, (byHour.get(hourKey) || 0) + 1);
-      byWeekday.set(weekdayKey, (byWeekday.get(weekdayKey) || 0) + 1);
-      outcomeCount.set(call.outcome, (outcomeCount.get(call.outcome) || 0) + 1);
+      byHour.set(createdAt.getHours(), (byHour.get(createdAt.getHours()) || 0) + 1);
+      byWeekday.set(WEEKDAY_ORDER[createdAt.getDay()], (byWeekday.get(WEEKDAY_ORDER[createdAt.getDay()]) || 0) + 1);
+      outcomes.set(normalizedOutcome, (outcomes.get(normalizedOutcome) || 0) + 1);
+
+      durations.push(duration);
 
       if (call.agent_id) {
-        const existingAgent = agentBreakdown.get(call.agent_id) || {
+        const entry = agentBreakdown.get(call.agent_id) || {
           agent_id: call.agent_id,
           calls: 0,
           booked: 0,
           missed_calls: 0,
           total_duration: 0,
         };
-        existingAgent.calls += 1;
-        existingAgent.total_duration += call.duration_seconds || 0;
-        if (call.outcome === 'booked') existingAgent.booked += 1;
-        if (call.outcome === 'missed') existingAgent.missed_calls += 1;
-        agentBreakdown.set(call.agent_id, existingAgent);
+        entry.calls += 1;
+        entry.total_duration += duration;
+        if (normalizedOutcome === 'booked' || matchedAppointmentsByCall.get(call.id)) entry.booked += 1;
+        if (normalizedOutcome === 'missed') entry.missed_calls += 1;
+        agentBreakdown.set(call.agent_id, entry);
       }
     }
 
-    let appointmentQuery = supabase
-      .from('appointments')
-      .select('reason, status, call_session_id')
-      .eq('organization_id', req.orgId)
-      .gte('created_at', startDate)
-      .lte('created_at', endDate);
+    const serviceBreakdown = new Map();
+    const sourceBreakdown = new Map();
+    const daySeries = createDaySeries(startDate, endDate);
+    const dayIndex = new Map(daySeries.map((day, index) => [formatDayKey(day), index]));
+    const servicesByDay = new Map();
 
-    if (scopedAgentId) {
-      const callIds = allCalls.map((call) => call.id);
-      if (callIds.length === 0) {
-        appointmentQuery = null;
-      } else {
-        appointmentQuery = appointmentQuery.in('call_session_id', callIds);
-      }
-    }
-
-    let appointments = [];
-    if (appointmentQuery) {
-      const { data: appointmentRows, error: appointmentError } = await appointmentQuery;
-      if (appointmentError) throw appointmentError;
-      appointments = appointmentRows || [];
-    }
-
-    const serviceMap = new Map();
-    for (const appointment of appointments) {
-      const serviceName = appointment.reason || 'Unspecified';
-      const existingService = serviceMap.get(serviceName) || {
+    for (const appointment of allAppointments) {
+      const serviceName = appointment.service_requested || appointment.reason || 'Unspecified';
+      const entry = serviceBreakdown.get(serviceName) || {
         service: serviceName,
         requested: 0,
         booked: 0,
         avg_duration: 0,
+        _totalDuration: 0,
       };
+      entry.requested += 1;
+      if (isBookedAppointmentStatus(appointment.status)) entry.booked += 1;
 
-      existingService.requested += 1;
-      if (['scheduled', 'confirmed', 'completed'].includes(appointment.status)) {
-        existingService.booked += 1;
+      if (appointment.call_log_id) {
+        const matchedCall = allCalls.find((call) => call.id === appointment.call_log_id);
+        if (matchedCall?.duration_seconds) {
+          entry._totalDuration += matchedCall.duration_seconds;
+        }
       }
 
-      serviceMap.set(serviceName, existingService);
+      serviceBreakdown.set(serviceName, entry);
+
+      const source = appointment.source || 'unknown';
+      sourceBreakdown.set(source, (sourceBreakdown.get(source) || 0) + 1);
+
+      const appointmentDate = new Date(appointment.start_time || appointment.appointment_at || appointment.created_at);
+      const bucketKey = Number.isNaN(appointmentDate.getTime()) ? null : formatDayKey(appointmentDate);
+      if (bucketKey && dayIndex.has(bucketKey)) {
+        const row = servicesByDay.get(serviceName) || Array.from({ length: daySeries.length }, () => 0);
+        row[dayIndex.get(bucketKey)] += 1;
+        servicesByDay.set(serviceName, row);
+      }
     }
+
+    const totalCalls = allCalls.length;
+    const totalBookings = allAppointments.filter((appointment) => isBookedAppointmentStatus(appointment.status)).length;
+    const missedCalls = allCalls.filter((call) => normalizeCallOutcome(call.status) === 'missed').length;
+    const callsAnswered = Math.max(0, totalCalls - missedCalls);
+    const avgDuration = durations.length > 0
+      ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+      : 0;
+    const totalSources = Array.from(sourceBreakdown.values()).reduce((sum, value) => sum + value, 0);
 
     res.json({
       data: {
         total_calls: totalCalls,
-        total_bookings: bookedCalls.length,
-        booking_rate: totalCalls > 0 ? (bookedCalls.length / totalCalls) * 100 : 0,
-        avg_duration: durations.length > 0 ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : 0,
-        calls_answered: answeredCalls.length,
-        missed_calls: allCalls.filter((call) => call.outcome === 'missed').length,
-        calls_by_day: Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date)),
+        total_bookings: totalBookings,
+        booking_rate: totalCalls > 0 ? (totalBookings / totalCalls) * 100 : 0,
+        avg_duration: avgDuration,
+        calls_answered: callsAnswered,
+        missed_calls: missedCalls,
+        calls_by_day: daySeries.map((day) => {
+          const key = formatDayKey(day);
+          return byDay.get(key) || { date: key, calls: 0, booked: 0 };
+        }),
         calls_by_hour: Array.from(byHour.entries())
           .map(([hour, count]) => ({ hour: Number(hour), count }))
-          .sort((a, b) => a.hour - b.hour),
-        calls_by_weekday: weekdayOrder.map((day) => ({ day, count: byWeekday.get(day) || 0 })),
-        outcome_breakdown: Array.from(outcomeCount.entries())
+          .sort((left, right) => left.hour - right.hour),
+        calls_by_weekday: WEEKDAY_ORDER.map((day) => ({ day, count: byWeekday.get(day) || 0 })),
+        outcome_breakdown: Array.from(outcomes.entries())
           .map(([outcome, count]) => ({ outcome, count }))
-          .sort((a, b) => Number(b.count) - Number(a.count)),
-        service_breakdown: Array.from(serviceMap.values())
-          .sort((a, b) => b.requested - a.requested),
+          .sort((left, right) => right.count - left.count),
+        outcomes: Object.fromEntries(outcomes.entries()),
+        service_breakdown: Array.from(serviceBreakdown.values())
+          .map(({ _totalDuration, ...entry }) => ({
+            ...entry,
+            avg_duration: entry.requested > 0 ? Math.round(_totalDuration / entry.requested) : 0,
+          }))
+          .sort((left, right) => right.requested - left.requested),
+        services_by_day: Array.from(servicesByDay.entries())
+          .map(([service, data]) => ({ service, data }))
+          .sort((left, right) => right.data.reduce((sum, value) => sum + value, 0) - left.data.reduce((sum, value) => sum + value, 0)),
+        service_days: daySeries.map((day) => day.toLocaleDateString('en-US', { weekday: 'short' })),
+        source_breakdown: Array.from(sourceBreakdown.entries())
+          .map(([source, count]) => ({
+            source,
+            count,
+            pct: totalSources > 0 ? Math.round((count / totalSources) * 100) : 0,
+          }))
+          .sort((left, right) => right.count - left.count),
         agent_breakdown: Array.from(agentBreakdown.values())
           .map((agent) => ({
             agent_id: agent.agent_id,
@@ -171,7 +258,7 @@ router.get('/', async (req, res, next) => {
             avg_duration: agent.calls > 0 ? Math.round(agent.total_duration / agent.calls) : 0,
             missed_calls: agent.missed_calls,
           }))
-          .sort((a, b) => b.calls - a.calls),
+          .sort((left, right) => right.calls - left.calls),
       },
     });
   } catch (err) {

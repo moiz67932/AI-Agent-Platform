@@ -3,12 +3,15 @@ Assistant tools for the dental AI agent.
 """
 
 from __future__ import annotations
+import os
 import re
 import time
 import asyncio
-from typing import Optional, Dict, Any, Callable, Sequence, cast
+from typing import Optional, Dict, Any, Callable, Awaitable, Sequence, cast
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+import httpx
 
 from config import (
     DEFAULT_TZ,
@@ -22,6 +25,7 @@ from config import (
 
 from models.state import PatientState
 from livekit.agents import llm
+from livekit.plugins import openai as openai_plugin
 
 from utils.phone_utils import (
     _normalize_phone_preserve_plus,
@@ -316,6 +320,41 @@ ARRIVAL_HINT_RE = re.compile(
 
 KNOWLEDGE_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|;\s+")
 ANYTHING_ELSE_FOLLOW_UP_TEXT = "Is there anything else I can help you with today?"
+CLINIC_INFO_PRICE_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d{2})?", re.IGNORECASE)
+CLINIC_INFO_TIMING_RE = re.compile(
+    r"\b(?:\d+\s*(?:minutes?|mins?|hours?|hrs?)|an hour|half an hour|a half hour|full hour)\b",
+    re.IGNORECASE,
+)
+CLINIC_INFO_HUMANIZER_SYSTEM_PROMPT = (
+    "You rewrite verified clinic answers for a live phone call. "
+    "Keep every fact exactly the same. Do not add, remove, round, or guess any detail. "
+    "Use one short natural sentence, or two short sentences only if needed. "
+    "Convert labels and fragments into warm, conversational spoken English. "
+    "If service name, pricing, timing, hours, policy, or insurance details are provided, weave them in naturally. "
+    "No bullets, markdown, greetings, sign-offs, or filler. "
+    "Return only the final spoken reply."
+)
+CLINIC_INFO_HUMANIZER_FALLBACK_PREFIXES = (
+    "I don't have that exact detail",
+    "I don't have the exact pricing",
+    "I don't have the exact insurance",
+    "I don't have the exact office hours",
+    "I don't have that location detail",
+    "I want to make sure I give you the right pricing",
+)
+CLINIC_INFO_HUMANIZER_MODEL = os.getenv("CLINIC_INFO_HUMANIZER_MODEL", "gpt-4o-mini")
+CLINIC_INFO_HUMANIZER_TIMEOUT_SECONDS = float(
+    os.getenv("CLINIC_INFO_HUMANIZER_TIMEOUT_SECONDS", "1.35")
+)
+CLINIC_INFO_HUMANIZER_CACHE_SIZE = max(
+    8,
+    int(os.getenv("CLINIC_INFO_HUMANIZER_CACHE_SIZE", "128")),
+)
+ClinicAnswerHumanizer = Callable[[str, str, Optional[str]], Awaitable[str]]
+
+_CLINIC_INFO_HUMANIZER_LLM: Optional[openai_plugin.LLM] = None
+_CLINIC_INFO_HUMANIZER_CACHE: Dict[str, str] = {}
+
 GENERIC_SERVICE_TERMS = {
     "appointment",
     "care",
@@ -418,6 +457,284 @@ def _normalize_knowledge_articles(articles: Optional[Sequence[Dict[str, Any]]]) 
         if title or body or category:
             normalized.append({"title": title, "body": body, "category": category})
     return normalized
+
+
+def _normalize_voice_reply(text: str) -> str:
+    cleaned = " ".join((text or "").split()).strip()
+    if cleaned and cleaned[-1] not in ".!?":
+        cleaned += "."
+    return cleaned
+
+
+def _unique_nonempty(values: Sequence[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = " ".join(str(value or "").split()).strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
+def _extract_clinic_speech_facts(
+    question: str,
+    answer: str,
+    *,
+    fallback_service: Optional[str] = None,
+) -> Dict[str, str]:
+    normalized_question = " ".join((question or "").split()).strip()
+    normalized_answer = " ".join((answer or "").split()).strip()
+    detected_service = (
+        extract_reason_quick(normalized_question, industry_type=_GLOBAL_INDUSTRY_TYPE)
+        or fallback_service
+        or ""
+    )
+    routed_categories = sorted(_question_knowledge_categories(normalized_question))
+    prices = _unique_nonempty(
+        [match.group(0) for match in CLINIC_INFO_PRICE_RE.finditer(normalized_answer)]
+    )
+    timing = _unique_nonempty(
+        [match.group(0) for match in CLINIC_INFO_TIMING_RE.finditer(normalized_answer)]
+    )
+    return {
+        "topic": ", ".join(routed_categories) or "general",
+        "service": " ".join(str(detected_service).split()).strip(),
+        "pricing": ", ".join(prices),
+        "timing": ", ".join(timing),
+    }
+
+
+def _cache_clinic_info_humanized_reply(key: str, value: str) -> None:
+    if not key or not value:
+        return
+    if key in _CLINIC_INFO_HUMANIZER_CACHE:
+        _CLINIC_INFO_HUMANIZER_CACHE.pop(key, None)
+    _CLINIC_INFO_HUMANIZER_CACHE[key] = value
+    while len(_CLINIC_INFO_HUMANIZER_CACHE) > CLINIC_INFO_HUMANIZER_CACHE_SIZE:
+        oldest_key = next(iter(_CLINIC_INFO_HUMANIZER_CACHE))
+        _CLINIC_INFO_HUMANIZER_CACHE.pop(oldest_key, None)
+
+
+def _prompt_humanizer_enabled() -> bool:
+    configured = os.getenv("CLINIC_INFO_HUMANIZER_ENABLED", "1").strip().lower()
+    if configured in {"0", "false", "no"}:
+        return False
+    return not bool(os.getenv("PYTEST_CURRENT_TEST"))
+
+
+def _build_clinic_info_humanizer_payload(
+    question: str,
+    answer: str,
+    *,
+    fallback_service: Optional[str] = None,
+) -> str:
+    facts = _extract_clinic_speech_facts(
+        question,
+        answer,
+        fallback_service=fallback_service,
+    )
+    return (
+        f"Caller question: {question or 'not provided'}\n"
+        f"Topic: {facts['topic'] or 'general'}\n"
+        f"Service name: {facts['service'] or 'not provided'}\n"
+        f"Pricing: {facts['pricing'] or 'not provided'}\n"
+        f"Time period: {facts['timing'] or 'not provided'}\n"
+        f"Verified answer: {answer}\n"
+        "Spoken reply:"
+    )
+
+
+def _rule_based_humanize_clinic_answer(
+    question: str,
+    answer: str,
+    *,
+    fallback_service: Optional[str] = None,
+) -> Optional[str]:
+    normalized_question = " ".join((question or "").split()).strip()
+    normalized_answer = " ".join((answer or "").split()).strip()
+    if not normalized_answer:
+        return None
+
+    facts = _extract_clinic_speech_facts(
+        normalized_question,
+        normalized_answer,
+        fallback_service=fallback_service,
+    )
+    service = facts["service"]
+    prices = [part.strip() for part in facts["pricing"].split(",") if part.strip()]
+    timing = [part.strip() for part in facts["timing"].split(",") if part.strip()]
+    lower_answer = normalized_answer.lower()
+
+    if service and len(prices) == 1 and ":" in normalized_answer:
+        if timing:
+            return _normalize_voice_reply(
+                f"{service} is {prices[0]}, and it usually takes about {timing[0]}"
+            )
+        return _normalize_voice_reply(f"{service} is {prices[0]}")
+
+    if (
+        service
+        and len(prices) == 1
+        and PRICING_HINT_RE.search(normalized_question)
+        and not re.search(r"\b(is|are|runs|costs|starts|takes|includes|comes)\b", lower_answer)
+    ):
+        if timing:
+            return _normalize_voice_reply(
+                f"{service} is {prices[0]}, and it usually takes about {timing[0]}"
+            )
+        return _normalize_voice_reply(f"{service} is {prices[0]}")
+
+    return None
+
+
+def _should_prompt_humanize_clinic_answer(answer: str) -> bool:
+    normalized = " ".join((answer or "").split()).strip()
+    if not normalized:
+        return False
+    return not any(
+        normalized.startswith(prefix)
+        for prefix in CLINIC_INFO_HUMANIZER_FALLBACK_PREFIXES
+    )
+
+
+def _clinic_humanizer_preserves_facts(
+    candidate: str,
+    *,
+    question: str,
+    answer: str,
+    fallback_service: Optional[str] = None,
+) -> bool:
+    normalized_candidate = " ".join((candidate or "").split()).strip().lower()
+    if not normalized_candidate:
+        return False
+
+    facts = _extract_clinic_speech_facts(
+        question,
+        answer,
+        fallback_service=fallback_service,
+    )
+    prices = [part.strip().lower() for part in facts["pricing"].split(",") if part.strip()]
+    timing = [part.strip().lower() for part in facts["timing"].split(",") if part.strip()]
+
+    if prices and any(price not in normalized_candidate for price in prices):
+        return False
+    if timing and any(detail not in normalized_candidate for detail in timing):
+        return False
+    return True
+
+
+def _get_clinic_info_humanizer_llm() -> openai_plugin.LLM:
+    global _CLINIC_INFO_HUMANIZER_LLM
+    if _CLINIC_INFO_HUMANIZER_LLM is None:
+        _CLINIC_INFO_HUMANIZER_LLM = openai_plugin.LLM(
+            model=CLINIC_INFO_HUMANIZER_MODEL,
+            temperature=0.2,
+            max_completion_tokens=80,
+            timeout=httpx.Timeout(connect=2.0, read=2.0, write=2.0, pool=2.0),
+        )
+    return _CLINIC_INFO_HUMANIZER_LLM
+
+
+async def _collect_llm_stream_text(stream: llm.LLMStream) -> str:
+    parts: list[str] = []
+    async with stream:
+        async for chunk in stream:
+            delta = getattr(chunk, "delta", None)
+            if delta and getattr(delta, "content", None):
+                parts.append(str(delta.content))
+    return _normalize_voice_reply("".join(parts))
+
+
+async def _humanize_clinic_answer_with_prompt(
+    question: str,
+    answer: str,
+    fallback_service: Optional[str] = None,
+) -> str:
+    payload = _build_clinic_info_humanizer_payload(
+        question,
+        answer,
+        fallback_service=fallback_service,
+    )
+    cache_key = payload.lower()
+    cached = _CLINIC_INFO_HUMANIZER_CACHE.get(cache_key)
+    if cached:
+        return cached
+
+    chat_ctx = llm.ChatContext()
+    chat_ctx.add_message(role="system", content=CLINIC_INFO_HUMANIZER_SYSTEM_PROMPT)
+    chat_ctx.add_message(role="user", content=payload)
+
+    formatter = _get_clinic_info_humanizer_llm()
+
+    async def _run_formatter() -> str:
+        stream = formatter.chat(chat_ctx=chat_ctx)
+        return await _collect_llm_stream_text(stream)
+
+    humanized = await asyncio.wait_for(
+        _run_formatter(),
+        timeout=CLINIC_INFO_HUMANIZER_TIMEOUT_SECONDS,
+    )
+    humanized = _normalize_voice_reply(humanized)
+    if not _clinic_humanizer_preserves_facts(
+        humanized,
+        question=question,
+        answer=answer,
+        fallback_service=fallback_service,
+    ):
+        return _normalize_voice_reply(answer)
+
+    _cache_clinic_info_humanized_reply(cache_key, humanized)
+    return humanized
+
+
+async def humanize_clinic_answer_for_voice(
+    question: str,
+    answer: str,
+    fallback_service: Optional[str] = None,
+) -> str:
+    normalized_answer = _normalize_voice_reply(answer)
+    if not normalized_answer:
+        return normalized_answer
+
+    rule_based = _rule_based_humanize_clinic_answer(
+        question,
+        normalized_answer,
+        fallback_service=fallback_service,
+    )
+    if rule_based:
+        return rule_based
+
+    if not _should_prompt_humanize_clinic_answer(normalized_answer):
+        return normalized_answer
+
+    if not _prompt_humanizer_enabled():
+        return normalized_answer
+
+    try:
+        humanized = await _humanize_clinic_answer_with_prompt(
+            question,
+            normalized_answer,
+            fallback_service=fallback_service,
+        )
+        if humanized and humanized != normalized_answer:
+            facts = _extract_clinic_speech_facts(
+                question,
+                normalized_answer,
+                fallback_service=fallback_service,
+            )
+            logger.info(
+                f"[FAQ HUMANIZER] topic={facts['topic']} "
+                f"service={facts['service'] or '-'}"
+            )
+        return humanized or normalized_answer
+    except Exception as exc:
+        logger.debug(f"[FAQ HUMANIZER] fallback_due_to_error={exc}")
+        return normalized_answer
 
 
 def _knowledge_terms(text: Optional[str]) -> set[str]:
@@ -1140,6 +1457,7 @@ class AssistantTools:
         clinic_tz: Optional[str] = None,
         knowledge_articles: Optional[Sequence[Dict[str, Any]]] = None,
         industry_type: Optional[str] = None,
+        clinic_answer_humanizer: Optional[ClinicAnswerHumanizer] = None,
     ):
         self.state = state
         self._clinic_info: Dict[str, Any] = clinic_info if clinic_info is not None else (_GLOBAL_CLINIC_INFO or {})
@@ -1148,6 +1466,9 @@ class AssistantTools:
         self._clinic_tz: str = clinic_tz or _GLOBAL_CLINIC_TZ
         self._knowledge_articles: list[Dict[str, str]] = _normalize_knowledge_articles(knowledge_articles)
         self._industry_type: str = industry_type or _GLOBAL_INDUSTRY_TYPE
+        self._clinic_answer_humanizer: ClinicAnswerHumanizer = (
+            clinic_answer_humanizer or humanize_clinic_answer_for_voice
+        )
         self._refresh_memory: Optional[Callable[[], None]] = None
         # Optional async callback for speaking a final response directly from a tool,
         # bypassing the LLM re-generation step. Set by agent.py after session is ready.
@@ -1194,6 +1515,21 @@ class AssistantTools:
             fallback_service=getattr(self.state, "reason", None),
         )
 
+    async def _humanize_clinic_info_answer(self, question: str, answer: str) -> str:
+        cleaned = _normalize_voice_reply(answer)
+        if not cleaned:
+            return cleaned
+        try:
+            humanized = await self._clinic_answer_humanizer(
+                question,
+                cleaned,
+                getattr(self.state, "reason", None),
+            )
+        except Exception as exc:
+            logger.debug(f"[FAQ HUMANIZER] callback_fallback_due_to_error={exc}")
+            return cleaned
+        return _normalize_voice_reply(humanized or cleaned)
+
     @llm.function_tool(
         description=(
             "Look up clinic FAQ, pricing, insurance, hours, location, parking, and service details "
@@ -1203,8 +1539,10 @@ class AssistantTools:
     async def search_clinic_info(self, question: str) -> str:
         answer = self._compose_clinic_info_answer(question)
         if answer:
-            return answer
-        return "I don't have that exact detail in my notes right now, but the office can confirm it for you."
+            return await self._humanize_clinic_info_answer(question, answer)
+        return _normalize_voice_reply(
+            "I don't have that exact detail in my notes right now, but the office can confirm it for you."
+        )
 
     async def answer_clinic_question(
         self,
@@ -1218,6 +1556,7 @@ class AssistantTools:
         answer = self._compose_clinic_info_answer(question)
         if not answer:
             answer = "I don't have that exact detail in my notes right now, but the office can confirm it for you."
+        answer = await self._humanize_clinic_info_answer(question, answer)
         if not include_follow_up:
             return answer
 

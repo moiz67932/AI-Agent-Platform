@@ -64,15 +64,25 @@ export interface Agent {
   clinic_id: string;
   name: string;
   status: 'live' | 'paused' | 'draft' | 'deploying' | 'error' | 'offline';
+  port?: number | null;
+  subdomain?: string | null;
+  phone_number?: PhoneNumber | null;
+  twilio_phone_sid?: string | null;
   deploy_error?: string | null;
   deploy_progress?: number | null;
+  hetzner_server_ip?: string | null;
+  livekit_agent_name?: string | null;
+  livekit_trunk_id?: string | null;
+  livekit_dispatch_rule_id?: string | null;
+  sip_auth_username?: string | null;
+  sip_auth_password?: string | null;
+  config_json?: Record<string, unknown>;
   default_language: string;
   created_at: string;
   updated_at: string;
   // Joined data
   clinic?: Clinic;
   settings?: AgentSettings;
-  phone_number?: PhoneNumber;
 }
 
 // ─── Agent Settings ───
@@ -88,6 +98,9 @@ export interface AgentSettings {
 }
 
 export interface AgentConfig {
+  industry_type?: IndustryType;
+  working_hours?: Record<string, { start: string; end: string }[]>;
+  closed_dates?: string[];
   treatment_durations: Record<string, number>;
   services: ServiceItem[];
   emergency_handling: boolean;
@@ -132,6 +145,9 @@ export interface CallSession {
   duration_seconds: number;
   started_at: string;
   ended_at?: string;
+  response_time_ms?: number | null;
+  summary?: string | null;
+  transcript_text?: string | null;
   transcript?: TranscriptEntry[];
   // Joined
   agent?: Agent;
@@ -158,6 +174,9 @@ export interface Appointment {
   start_time: string;
   end_time: string;
   reason: string;
+  service_requested?: string | null;
+  appointment_at?: string | null;
+  caller_name?: string | null;
   status: 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
   source: 'ai' | 'manual' | 'online' | 'walk_in';
   notes?: string;
@@ -192,8 +211,12 @@ export interface AnalyticsData {
   calls_by_day: { date: string; calls: number; booked: number }[];
   calls_by_hour: { hour: number; count: number }[];
   calls_by_weekday: { day: string; count: number }[];
+  outcomes?: Record<string, number>;
   outcome_breakdown: { outcome: string; count: number }[];
   service_breakdown: { service: string; requested: number; booked: number; avg_duration: number }[];
+  services_by_day?: { service: string; data: number[] }[];
+  service_days?: string[];
+  source_breakdown?: { source: string; count: number; pct: number }[];
   agent_breakdown: {
     agent_id: string;
     calls: number;

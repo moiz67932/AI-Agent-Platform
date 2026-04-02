@@ -663,13 +663,17 @@ class StreamingTurnTracker:
             "booking.capture_date",
             "booking.capture_time",
         }
+        interrupting_intent = (
+            snap.intent in {"clinic_info", "appointment_lookup", "reschedule", "cancellation", "general_issue"}
+            and snap.intent_confidence >= self.config.low_confidence_threshold
+        )
 
         if expected_slot and self.config.expected_slot_enable_date_time_fast_path:
             if expected_slot == ExpectedUserSlot.NAME:
                 if snap.expected_slot_status == "satisfied":
                     snap.actionable = True
                     snap.deterministic_next_step = "booking.capture_name"
-                elif snap.expected_slot_status == "unsatisfied":
+                elif snap.expected_slot_status == "unsatisfied" and not interrupting_intent:
                     return
             elif expected_slot == ExpectedUserSlot.DATE_TIME:
                 if snap.expected_slot_status == "satisfied":
@@ -681,19 +685,19 @@ class StreamingTurnTracker:
                 elif snap.expected_slot_status == "partial_time":
                     snap.actionable = True
                     snap.deterministic_next_step = "booking.capture_time"
-                elif snap.expected_slot_status == "unsatisfied":
+                elif snap.expected_slot_status == "unsatisfied" and not interrupting_intent:
                     return
             elif expected_slot == ExpectedUserSlot.DATE:
                 if snap.expected_slot_status == "satisfied":
                     snap.actionable = True
                     snap.deterministic_next_step = "booking.capture_date"
-                elif snap.expected_slot_status == "unsatisfied":
+                elif snap.expected_slot_status == "unsatisfied" and not interrupting_intent:
                     return
             elif expected_slot == ExpectedUserSlot.TIME:
                 if snap.expected_slot_status == "satisfied":
                     snap.actionable = True
                     snap.deterministic_next_step = "booking.capture_time"
-                elif snap.expected_slot_status == "unsatisfied":
+                elif snap.expected_slot_status == "unsatisfied" and not interrupting_intent:
                     return
             elif expected_slot == ExpectedUserSlot.SERVICE:
                 if snap.expected_slot_status == "satisfied":
@@ -721,7 +725,7 @@ class StreamingTurnTracker:
                         )
                     else:
                         snap.deterministic_next_step = "booking.route_existing_flow"
-                elif snap.expected_slot_status == "unsatisfied":
+                elif snap.expected_slot_status == "unsatisfied" and not interrupting_intent:
                     return
 
         if (

@@ -141,11 +141,73 @@ def _default_hours() -> Dict[str, List[Dict[str, str]]]:
     }
 
 
+def _normalize_working_hours(
+    raw_hours: Optional[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, str]]]:
+    normalized: Dict[str, List[Dict[str, str]]] = {key: [] for key in WEEK_KEYS}
+    if not isinstance(raw_hours, dict):
+        return normalized
+
+    alias_map = {
+        "mon": "mon",
+        "monday": "mon",
+        "tue": "tue",
+        "tuesday": "tue",
+        "wed": "wed",
+        "wednesday": "wed",
+        "thu": "thu",
+        "thursday": "thu",
+        "fri": "fri",
+        "friday": "fri",
+        "sat": "sat",
+        "saturday": "sat",
+        "sun": "sun",
+        "sunday": "sun",
+    }
+
+    def _normalize_interval(interval: Any) -> Optional[Dict[str, str]]:
+        if not isinstance(interval, dict):
+            return None
+        start = str(interval.get("start") or "").strip()
+        end = str(interval.get("end") or "").strip()
+        if not start or not end:
+            return None
+        return {"start": start, "end": end}
+
+    for source_key, value in raw_hours.items():
+        target_key = alias_map.get(str(source_key).strip().lower())
+        if not target_key:
+            continue
+
+        if isinstance(value, list):
+            normalized[target_key] = [
+                interval
+                for interval in (_normalize_interval(item) for item in value)
+                if interval
+            ]
+            continue
+
+        if isinstance(value, dict):
+            if value.get("closed") is True:
+                normalized[target_key] = []
+                continue
+            if "open" in value and not value.get("open"):
+                normalized[target_key] = []
+                continue
+            interval = _normalize_interval(value)
+            normalized[target_key] = [interval] if interval else []
+
+    return normalized
+
+
 # ============================================================================
 # Extracted: load_schedule_from_settings
 # ============================================================================
 
-def load_schedule_from_settings(settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def load_schedule_from_settings(
+    settings: Optional[Dict[str, Any]],
+    clinic_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Load comprehensive scheduling config from agent_settings.config_json.
     
@@ -167,8 +229,12 @@ def load_schedule_from_settings(settings: Optional[Dict[str, Any]]) -> Dict[str,
         logger.warning(f"[SCHEDULE] Failed parsing config_json: {e}")
     
     # Working hours
-    wh = cfg.get("working_hours") or _default_hours()
-    working_hours = {k: wh.get(k, []) for k in WEEK_KEYS}
+    raw_working_hours = cfg.get("working_hours")
+    if not raw_working_hours and isinstance(clinic_info, dict):
+        raw_working_hours = clinic_info.get("working_hours")
+    working_hours = _normalize_working_hours(raw_working_hours)
+    if not any(working_hours.values()):
+        working_hours = _default_hours()
     
     # Closed dates (holidays)
     closed = set()

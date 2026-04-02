@@ -284,6 +284,19 @@ class TurnTakingPolicyTests(unittest.TestCase):
         self.assertEqual(decision.action, PolicyAction.FAST_PATH)
         self.assertEqual(decision.deterministic_route, "booking.capture_time")
 
+    def test_clinic_info_interrupts_expected_time_slot(self) -> None:
+        state = PatientState(reason="Teeth whitening", dt_text="Friday, April 03")
+        snapshot, decision = preview_turn(
+            "I don't want to book. I just want the pricing for teeth whitening.",
+            patient_state=state,
+            expected_user_slot=ExpectedUserSlot.TIME.value,
+            config=self.config,
+        )
+
+        self.assertEqual(snapshot.intent, "clinic_info")
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.deterministic_route, "clinic_info.answer")
+
     def test_low_confidence_text_falls_back_to_llm(self) -> None:
         snapshot, decision = preview_turn(
             "Maybe later.",

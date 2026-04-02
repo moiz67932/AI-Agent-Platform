@@ -500,9 +500,9 @@ server {{
 
     def _reload_runtime_processes(self, client: paramiko.SSHClient, agent_id: str) -> None:
         """Reload supervisor and nginx so the updated runtime starts serving traffic."""
-        self._exec(client, "supervisorctl reread", check=False)
-        self._exec(client, "supervisorctl update", check=False)
-        self._exec(client, f"supervisorctl restart agent-{agent_id}-worker agent-{agent_id}-web", check=False)
+        self._exec(client, "supervisorctl reread")
+        self._exec(client, "supervisorctl update")
+        self._exec(client, f"supervisorctl restart agent-{agent_id}-worker agent-{agent_id}-web")
 
         if self.agents_domain != "localhost":
             self._exec(client, "nginx -t")

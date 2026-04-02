@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { scrapeUrl, isValidScrapableUrl } from '../services/scraperService.js';
+import { fromKnowledgeArticleRow, toKnowledgeArticleRecord } from '../lib/clinicConfig.js';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ router.get('/:clinicId', async (req, res, next) => {
 
     const { data, error } = await query;
     if (error) throw error;
-    res.json({ data });
+    res.json({ data: (data || []).map(fromKnowledgeArticleRow) });
   } catch (err) { next(err); }
 });
 
@@ -32,10 +33,11 @@ router.get('/:clinicId', async (req, res, next) => {
 router.post('/:clinicId', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { clinicId } = req.params;
+    const payload = toKnowledgeArticleRecord(req.body);
     const { data, error } = await supabase
       .from('knowledge_articles')
       .insert({
-        ...req.body,
+        ...payload,
         clinic_id: clinicId,
         organization_id: req.orgId,
       })
@@ -43,7 +45,7 @@ router.post('/:clinicId', requireRole('owner', 'admin'), async (req, res, next) 
       .single();
 
     if (error) throw error;
-    res.status(201).json({ data });
+    res.status(201).json({ data: fromKnowledgeArticleRow(data) });
   } catch (err) { next(err); }
 });
 
@@ -51,9 +53,10 @@ router.post('/:clinicId', requireRole('owner', 'admin'), async (req, res, next) 
 router.put('/:clinicId/:articleId', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
     const { clinicId, articleId } = req.params;
+    const payload = toKnowledgeArticleRecord(req.body);
     const { data, error } = await supabase
       .from('knowledge_articles')
-      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .update({ ...payload, updated_at: new Date().toISOString() })
       .eq('id', articleId)
       .eq('clinic_id', clinicId)
       .eq('organization_id', req.orgId)
@@ -61,7 +64,7 @@ router.put('/:clinicId/:articleId', requireRole('owner', 'admin'), async (req, r
       .single();
 
     if (error) throw error;
-    res.json({ data });
+    res.json({ data: fromKnowledgeArticleRow(data) });
   } catch (err) { next(err); }
 });
 
@@ -103,10 +106,10 @@ router.post('/:clinicId/search', async (req, res, next) => {
         .eq('clinic_id', clinicId)
         .or(`title.ilike.%${query}%,body.ilike.%${query}%`)
         .limit(10);
-      return res.json({ data: fallback || [] });
+      return res.json({ data: (fallback || []).map(fromKnowledgeArticleRow) });
     }
 
-    res.json({ data });
+    res.json({ data: (data || []).map(fromKnowledgeArticleRow) });
   } catch (err) { next(err); }
 });
 
@@ -153,7 +156,7 @@ router.post('/:clinicId/import-url', requireRole('owner', 'admin'), async (req, 
           title: section.title || result.title,
           body: section.body,
           category: 'Imported',
-          status: 'active',
+          active: true,
         });
         if (!insertErr) articlesCreated++;
       }

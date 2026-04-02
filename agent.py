@@ -1460,7 +1460,7 @@ async def _entrypoint_impl(ctx: JobContext):
     update_global_clinic_info(clinic_info, settings or {})
     logger.info(f"[TZ] Booking timezone locked to: {BOOKING_TZ} (clinic field='{clinic_tz}' ignored for datetime math)")
 
-    schedule = load_schedule_from_settings(settings or {})
+    schedule = load_schedule_from_settings(settings or {}, clinic_info or {})
     import tools.assistant_tools as _tools_mod
 
     # ── Industry profile detection ───────────────────────────────────────────
@@ -1470,7 +1470,11 @@ async def _entrypoint_impl(ctx: JobContext):
             _config_json = json.loads(_config_json)
         except Exception:
             _config_json = {}
-    industry_type = (_config_json.get("industry_type") or "dental") if isinstance(_config_json, dict) else "dental"
+    industry_type = (
+        (_config_json.get("industry_type") if isinstance(_config_json, dict) else None)
+        or (clinic_info or {}).get("industry")
+        or "dental"
+    )
     # Sync the already-constructed turn_tracker with the DB-confirmed industry_type.
     turn_tracker.industry_type = industry_type
     industry_profile: IndustryProfile = get_profile(industry_type)
@@ -1796,6 +1800,7 @@ async def _entrypoint_impl(ctx: JobContext):
                     f"[FAST PATH] route={route} text='{question_text[:120]}' "
                     f"booked={state.appointment_booked}"
                 )
+                _set_expected_slot(None, reason="clinic_info_interrupt")
                 spoken_text = await assistant_tools.answer_clinic_question(
                     question_text,
                     include_follow_up=not state.delivery_preference_pending,
@@ -2496,7 +2501,7 @@ async def _entrypoint_impl(ctx: JobContext):
                             clinic_name = ci.get("name") or clinic_name
                             clinic_tz = ci.get("timezone") or clinic_tz
                             clinic_region = ci.get("default_phone_region") or clinic_region
-                            schedule = load_schedule_from_settings(st or {})
+                            schedule = load_schedule_from_settings(st or {}, ci or {})
                             update_global_clinic_info(ci, st or {})
                             clinic_knowledge_articles = await _fetch_clinic_knowledge_articles(ci.get("id"))
                             clinic_faq = _format_clinic_faq(clinic_knowledge_articles)
@@ -2525,7 +2530,7 @@ async def _entrypoint_impl(ctx: JobContext):
                 clinic_name = clinic_info.get("name") or clinic_name
                 clinic_tz = clinic_info.get("timezone") or clinic_tz
                 clinic_region = clinic_info.get("default_phone_region") or clinic_region
-                schedule = load_schedule_from_settings(settings or {})
+                schedule = load_schedule_from_settings(settings or {}, clinic_info or {})
                 state.tz = BOOKING_TZ
                 update_global_clinic_info(clinic_info, settings or {})
                 clinic_knowledge_articles = await _fetch_clinic_knowledge_articles(clinic_info.get("id"))

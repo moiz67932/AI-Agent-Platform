@@ -3,9 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
 /**
- * Subscribes to Supabase Realtime changes on call_sessions and appointments.
+ * Subscribes to Supabase Realtime changes on call_logs and appointments.
  * Invalidates React Query caches on events so existing hooks refetch automatically.
- * Tracks active (in-progress) calls via INSERT/UPDATE on call_sessions.
+ * Tracks active (in-progress) calls via INSERT/UPDATE on call_logs.
  *
  * Degrades gracefully if Realtime is unavailable — isConnected stays false
  * and polling-based queries continue working as before.
@@ -25,7 +25,7 @@ export function useRealtimeSync(orgId: string | null | undefined) {
       .channel(`dashboard-sync-${orgId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'call_sessions' },
+        { event: 'INSERT', schema: 'public', table: 'call_logs' },
         (payload) => {
           const row = payload.new as { id?: string; ended_at?: string | null; organization_id?: string };
 
@@ -44,7 +44,7 @@ export function useRealtimeSync(orgId: string | null | undefined) {
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'call_sessions' },
+        { event: 'UPDATE', schema: 'public', table: 'call_logs' },
         (payload) => {
           const row = payload.new as { id?: string; ended_at?: string | null; organization_id?: string };
 

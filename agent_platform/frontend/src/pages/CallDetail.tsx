@@ -60,7 +60,10 @@ export default function CallDetail() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Phone className="h-4 w-4 text-dash-t3" />
-                <span className="font-mono">{call.caller_number ? maskPhone(call.caller_number) : 'Unknown'}</span>
+                <div>
+                  <p className="text-dash-t1">{call.caller_name || 'Unknown caller'}</p>
+                  <span className="font-mono text-xs text-dash-t3">{call.caller_number ? maskPhone(call.caller_number) : 'Unknown number'}</span>
+                </div>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-dash-t3" />
@@ -118,7 +121,7 @@ export default function CallDetail() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dash-t3">Service</span>
-                  <span>{call.appointment.reason}</span>
+                  <span>{call.appointment.service_requested || call.appointment.reason}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dash-t3">Date</span>
@@ -126,6 +129,28 @@ export default function CallDetail() {
                     weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                   })}</span>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {(call.summary || call.transcript_text) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Call Notes</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-dash-t1">
+                {call.summary && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-dash-t3">Summary</p>
+                    <p>{call.summary}</p>
+                  </div>
+                )}
+                {call.transcript_text && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-dash-t3">Transcript text</p>
+                    <p className="whitespace-pre-wrap">{call.transcript_text}</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

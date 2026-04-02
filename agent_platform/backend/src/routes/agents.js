@@ -2,6 +2,14 @@ import { Router } from 'express';
 import { supabase } from '../services/supabase.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
+import {
+  normalizeServices,
+  normalizeWorkingHours,
+  syncClinicHoursTable,
+  syncClinicHolidaysTable,
+  syncGeneratedKnowledgeArticles,
+} from '../lib/clinicConfig.js';
+import { normalizeAgentRecord } from '../lib/callData.js';
 
 const DEPLOY_API_URL = (process.env.DEPLOY_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
@@ -22,7 +30,7 @@ router.get('/', async (req, res, next) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    res.json({ data });
+    res.json({ data: (data || []).map(normalizeAgentRecord) });
   } catch (err) { next(err); }
 });
 
@@ -43,7 +51,7 @@ router.get('/:id', async (req, res, next) => {
 
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'Agent not found' });
-    res.json({ data });
+    res.json({ data: normalizeAgentRecord(data) });
   } catch (err) { next(err); }
 });
 
@@ -64,25 +72,125 @@ router.post('/', requireRole('owner', 'admin'), async (req, res, next) => {
 // PUT /api/agents/:id
 router.put('/:id', requireRole('owner', 'admin'), async (req, res, next) => {
   try {
-    const { settings, ...agentData } = req.body;
+    const { settings, clinic, ...agentData } = req.body;
 
-    // Update agent
-    const { data, error } = await supabase
-      .from('agents')
-      .update({ ...agentData, updated_at: new Date().toISOString() })
-      .eq('id', req.params.id)
-      .eq('organization_id', req.orgId)
-      .select()
-      .single();
+    const agentUpdatePayload = { ...agentData, updated_at: new Date().toISOString() };
+    delete agentUpdatePayload.clinic;
+
+    let data = null;
+    let error = null;
+    if (Object.keys(agentUpdatePayload).length > 1) {
+      const result = await supabase
+        .from('agents')
+        .update(agentUpdatePayload)
+        .eq('id', req.params.id)
+        .eq('organization_id', req.orgId)
+        .select()
+        .single();
+      data = result.data;
+      error = result.error;
+    } else {
+      const result = await supabase
+        .from('agents')
+        .select('id, clinic_id')
+        .eq('id', req.params.id)
+        .eq('organization_id', req.orgId)
+        .single();
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) throw error;
 
+    let normalizedHours = null;
+    let normalizedServices = null;
+    let closedDates = null;
+
+    // Update clinic if provided
+    if (clinic) {
+      const clinicPayload = { ...clinic };
+      if (clinicPayload.working_hours) {
+        normalizedHours = normalizeWorkingHours(clinicPayload.working_hours);
+        clinicPayload.working_hours = normalizedHours.full;
+      }
+
+      const { error: clinicError } = await supabase
+        .from('clinics')
+        .update(clinicPayload)
+        .eq('id', data.clinic_id)
+        .eq('organization_id', req.orgId);
+      if (clinicError) throw clinicError;
+    }
+
     // Update settings if provided
     if (settings) {
-      await supabase
+      const settingsPayload = { ...settings };
+      const configJson = {
+        ...(settings?.config_json || {}),
+      };
+      if (Array.isArray(configJson.services)) {
+        normalizedServices = normalizeServices(configJson.services);
+        configJson.services = normalizedServices;
+        configJson.treatment_durations = Object.fromEntries(
+          normalizedServices.map((service) => [service.name, service.duration])
+        );
+      }
+      if (normalizedHours) {
+        configJson.working_hours = normalizedHours.compact;
+      }
+      closedDates = Array.isArray(configJson.closed_dates) ? configJson.closed_dates : null;
+      settingsPayload.config_json = configJson;
+
+      const { error: settingsError } = await supabase
         .from('agent_settings')
-        .update(settings)
+        .update(settingsPayload)
         .eq('agent_id', req.params.id);
+      if (settingsError) throw settingsError;
+    }
+
+    if (normalizedHours) {
+      await syncClinicHoursTable(supabase, {
+        organizationId: req.orgId,
+        clinicId: data.clinic_id,
+        fullHours: normalizedHours.full,
+      });
+
+      if (closedDates !== null) {
+        await syncClinicHolidaysTable(supabase, {
+          organizationId: req.orgId,
+          clinicId: data.clinic_id,
+          closedDates,
+        });
+      }
+    }
+
+    if (normalizedHours || normalizedServices !== null) {
+      const { data: clinicRow, error: clinicFetchError } = await supabase
+        .from('clinics')
+        .select('working_hours')
+        .eq('id', data.clinic_id)
+        .eq('organization_id', req.orgId)
+        .single();
+      if (clinicFetchError) throw clinicFetchError;
+
+      let servicesForKnowledge = normalizedServices;
+      if (servicesForKnowledge === null) {
+        const { data: settingsRow, error: settingsFetchError } = await supabase
+          .from('agent_settings')
+          .select('config_json')
+          .eq('agent_id', req.params.id)
+          .single();
+        if (settingsFetchError) throw settingsFetchError;
+        servicesForKnowledge = normalizeServices(settingsRow?.config_json?.services);
+      }
+
+      const fullHours = normalizedHours || normalizeWorkingHours(clinicRow?.working_hours).full;
+      await syncGeneratedKnowledgeArticles(supabase, {
+        organizationId: req.orgId,
+        clinicId: data.clinic_id,
+        fullHours,
+        services: servicesForKnowledge,
+      });
     }
 
     res.json({ data });
