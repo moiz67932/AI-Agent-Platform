@@ -1,0 +1,870 @@
+{
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent.py": {
+    "mtime": 1777620434.2168355,
+    "hash": "c74d519dcfda6b18706fac01a3947a3e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_wrapper.py": {
+    "mtime": 1774610195.5703046,
+    "hash": "3e84b3888f761a829d22774d6481f09e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/config.py": {
+    "mtime": 1774601572.1372252,
+    "hash": "7127f18cb4fafcc2c0b2791dd8b82e03"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/main.py": {
+    "mtime": 1774609923.8882992,
+    "hash": "5d94dcadb2cef5b9b74ab48e807bc227"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/opus_check.py": {
+    "mtime": 1774871831.9338229,
+    "hash": "5b855aac6c68e6477acd19614decd896"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/post_call_pipeline.py": {
+    "mtime": 1774602159.4578793,
+    "hash": "6e4385112a91a0625647c49dc257a07f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/run.py": {
+    "mtime": 1774609890.1683,
+    "hash": "ad44d8e5917d9a893aaed6e1ce44ab9a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/spa_demo_seed.sql": {
+    "mtime": 1774029203.9092288,
+    "hash": "74f43036be63bc85cf374695fefdfd60"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/supabase_calendar_store.py": {
+    "mtime": 1767325483.5139651,
+    "hash": "9e5fc4fa1472620d34e2bf8d1a1e423c"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/webhook_server.py": {
+    "mtime": 1776935117.164098,
+    "hash": "8ada91f0f0a6c2e2dd5eb76cbb06ae26"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/worker_main.py": {
+    "mtime": 1775116667.948619,
+    "hash": "64b5d7d2ddbc54db7a6e553e1215fe8c"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/server_manager.py": {
+    "mtime": 1776935141.6887405,
+    "hash": "bb6dd3d71c397c57e20e8404b39bbc2a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/telnyx_provisioner.py": {
+    "mtime": 1776920369.077809,
+    "hash": "90524bc8227115bf294f161b4773218b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/twilio_provisioner.py": {
+    "mtime": 1776920273.4610863,
+    "hash": "5a6f9ec774a08e09b7b27c64175ec249"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/utils.py": {
+    "mtime": 1774601389.1242254,
+    "hash": "fc9c505ea3e8c5b7a2c1dfdbe7f04c80"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/index.js": {
+    "mtime": 1774588798.244672,
+    "hash": "999375671fa9c9b55fae616e9553323a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/lib/callData.js": {
+    "mtime": 1775041908.5772178,
+    "hash": "5614b090fcbc21da5fc175f2c743b24e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/lib/clinicConfig.js": {
+    "mtime": 1775020451.8134832,
+    "hash": "0340c0b8e6d4e51963cc4d5dff4ff2a7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/middleware/auth.js": {
+    "mtime": 1774467494.9682486,
+    "hash": "1b32467cf926b9895c940062aa85ff7d"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/middleware/errorHandler.js": {
+    "mtime": 1774088758.1233916,
+    "hash": "c440431c00351e61fbeb9c9af2f6b8f7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/middleware/rateLimiter.js": {
+    "mtime": 1774542468.1521394,
+    "hash": "2aae04a79ffaa13e97b90181a78ebead"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/middleware/requireRole.js": {
+    "mtime": 1774465619.2710068,
+    "hash": "dddf1d0f322c37f66459b63959d80189"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/agents.js": {
+    "mtime": 1776918813.1770961,
+    "hash": "873edd336d7c2f3eb229f0391a679511"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/analytics.js": {
+    "mtime": 1775041242.867943,
+    "hash": "ef08cbf6322fcd9bba63848d0b1b4f53"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/appointments.js": {
+    "mtime": 1775041298.329637,
+    "hash": "3cfb82429256708f54d463d14927eea7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/auth.js": {
+    "mtime": 1774588125.6324942,
+    "hash": "e1fe081ab5fec41e3a91f841b8f67652"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/calls.js": {
+    "mtime": 1775041929.617803,
+    "hash": "c45bdda4d05c01ca9bdcadc161d6e8b3"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/integrations.js": {
+    "mtime": 1776916450.4211526,
+    "hash": "97d066abf592dea357aa22993553962b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/knowledge.js": {
+    "mtime": 1775018191.4974275,
+    "hash": "3b22a880990bc643a6d1abfafe037070"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/notifications.js": {
+    "mtime": 1774465662.965674,
+    "hash": "e3054162ca4930081a687a3f583a3060"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/numbers.js": {
+    "mtime": 1776916450.4211526,
+    "hash": "d33e91e4dc033c3e72715ff95eac886e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/onboarding.js": {
+    "mtime": 1776916450.4991531,
+    "hash": "6806c9731db6671310cce44e4e976cbb"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/team.js": {
+    "mtime": 1774465748.2394545,
+    "hash": "abcc0b278361433967cc66b70aa2a834"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/routes/webhooks.js": {
+    "mtime": 1774088871.9853885,
+    "hash": "5231b84c3c370e92f3dcce4c101936cc"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/services/emailService.js": {
+    "mtime": 1774546153.8519144,
+    "hash": "ca2286e24c0e2709b87b1aff90284346"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/services/scraperService.js": {
+    "mtime": 1774466158.018028,
+    "hash": "b82743f09beb81c80d5d5aa6268180b7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/services/supabase.js": {
+    "mtime": 1774103039.306131,
+    "hash": "c00c2e1f47b2e02b7079c722acd2e89d"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/backend/src/services/telnyxService.js": {
+    "mtime": 1776916450.4211526,
+    "hash": "6a3688423bf4101a77d16f0c945bfdf8"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/postcss.config.js": {
+    "mtime": 1774058145.2112577,
+    "hash": "c735540bb63936a123bc867d950c9f69"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/tailwind.config.ts": {
+    "mtime": 1774680704.6434438,
+    "hash": "80f42cdd878ca5b8edf8cea059ef2f6a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/vite.config.ts": {
+    "mtime": 1774546154.8992243,
+    "hash": "01c3db980c321f82894876cfabe3e3f7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/App.tsx": {
+    "mtime": 1774887766.32524,
+    "hash": "a1dbe9765bbfa96db200a62a9ae506d5"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/main.tsx": {
+    "mtime": 1774058704.6725168,
+    "hash": "aa122bdcf833a2c00fdf9ca8e5348675"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/vite-env.d.ts": {
+    "mtime": 1774588659.6158507,
+    "hash": "0352474ba2918efe13895edbc3780d94"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/TestCallModal.tsx": {
+    "mtime": 1774706756.0296357,
+    "hash": "b4c87a6e281dd78fc3a76ce4c361fba3"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/layout/Header.tsx": {
+    "mtime": 1774681032.133444,
+    "hash": "ac39f0617f7d4d0822c3c5fd28cb64b9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/layout/PageLayout.tsx": {
+    "mtime": 1774681044.0354483,
+    "hash": "05c0e4dc084da7e216d0fdf9cbc05bbe"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/layout/Sidebar.tsx": {
+    "mtime": 1774706562.61084,
+    "hash": "62e1ee89de87c9ceb7a1dd2340586b57"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/avatar.tsx": {
+    "mtime": 1774681874.2067137,
+    "hash": "73eec722ba87535b9e405b3f8f7cec10"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/badge.tsx": {
+    "mtime": 1774681840.0226438,
+    "hash": "d92bb695efe32736928d57f7eea49dfb"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/button.tsx": {
+    "mtime": 1774681630.2904408,
+    "hash": "448741451b0f083f8f1b213c866fc7b0"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/card.tsx": {
+    "mtime": 1774681781.1874826,
+    "hash": "f449f862f429dd060a562c30dcb2bb09"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/dialog.tsx": {
+    "mtime": 1774681789.6085658,
+    "hash": "e2eab108c77fbd6969c1b8914efa9463"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/dropdown-menu.tsx": {
+    "mtime": 1774681813.6764042,
+    "hash": "5eebe93a5c8c4f3d9afd697195aa0d41"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/empty-state.tsx": {
+    "mtime": 1774681872.6072133,
+    "hash": "8207ce22be215a23007b67f89d7a1711"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/input.tsx": {
+    "mtime": 1774681822.273411,
+    "hash": "bf39117437a8ed956d31b2d3f579ddd8"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/label.tsx": {
+    "mtime": 1774058399.1294029,
+    "hash": "66755fe159e973b3dc3463f65bf63d90"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/loading-spinner.tsx": {
+    "mtime": 1774681869.499688,
+    "hash": "2bb5d0e66b7df25267dbb292a4710c52"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/outcome-badge.tsx": {
+    "mtime": 1774058637.0935204,
+    "hash": "a303a3041221d7be98d5a87ee55d1c95"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/progress.tsx": {
+    "mtime": 1774681865.1191266,
+    "hash": "aaa227f33c4cccf3dca6ddfc94b61d51"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/select.tsx": {
+    "mtime": 1774681834.7505958,
+    "hash": "8589e69eb1f128068faca017ec98bdc8"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/separator.tsx": {
+    "mtime": 1774681866.5021918,
+    "hash": "3b7e5b6a13bda31ec11b57204fc07593"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/skeleton.tsx": {
+    "mtime": 1774681868.111907,
+    "hash": "eba37fb294137bc946e2b3be6dd5b9fc"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/status-badge.tsx": {
+    "mtime": 1774893183.5652938,
+    "hash": "5d8563dd6d5753e939d9513e615de671"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/switch.tsx": {
+    "mtime": 1774681848.2951624,
+    "hash": "beee3bdc9891f312bf2096990d78a2b6"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/tabs.tsx": {
+    "mtime": 1774681859.9067347,
+    "hash": "ebd697499415e195acac1cde9eabfa42"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/textarea.tsx": {
+    "mtime": 1774681862.2030404,
+    "hash": "018632fbf9e4d2190d8ae8acc8f63b51"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/toast.tsx": {
+    "mtime": 1774681891.111714,
+    "hash": "d05e3eadbf988c42cb0bed9521e45330"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/toaster.tsx": {
+    "mtime": 1774058546.2024057,
+    "hash": "796c579d76fe3dc3041aab40c380acfc"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/components/ui/tooltip.tsx": {
+    "mtime": 1774681843.2796986,
+    "hash": "8e2570a2af4cccfd6343e951156d7670"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/use-toast.ts": {
+    "mtime": 1774058540.2264073,
+    "hash": "91a9a4c71fa0918218c0014ef042ebb0"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/useAgents.ts": {
+    "mtime": 1774931269.400928,
+    "hash": "c434aff4e1fb1407bf805427eb030184"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/useAnalytics.ts": {
+    "mtime": 1774058676.782523,
+    "hash": "f315f0ea2abb940995633229eca957b9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/useAppointments.ts": {
+    "mtime": 1774058671.4405208,
+    "hash": "50bf14290f98bbcf815557fc14c370d9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/useCalls.ts": {
+    "mtime": 1774058663.1775172,
+    "hash": "56cabeb5a9420555b0a5d744c806703e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/useKnowledge.ts": {
+    "mtime": 1774058656.1455214,
+    "hash": "0d3fcffc9bf12bf13cb55d7dd58786b6"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/usePhoneNumbers.ts": {
+    "mtime": 1774101885.365832,
+    "hash": "f967f4d652aa416d6c9f57d8b255673f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/hooks/useRealtimeSync.ts": {
+    "mtime": 1775041349.2416675,
+    "hash": "db78a06cce9f1f029f3d826850649bad"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/lib/api.ts": {
+    "mtime": 1774549258.1402907,
+    "hash": "95ed7e8e1a97c78c5c6e01a7c1e49437"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/lib/supabase.ts": {
+    "mtime": 1774588467.1979053,
+    "hash": "a35f8b2771c3ec3f054721dbfebcf6c9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/lib/utils.ts": {
+    "mtime": 1774058204.565786,
+    "hash": "dd76b77783a68bad6596dc112b36e6b4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/AcceptInvite.tsx": {
+    "mtime": 1774706639.7835124,
+    "hash": "e51819f2540453c9489f35e22ce0c6fe"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/AgentOverview.tsx": {
+    "mtime": 1775041830.177749,
+    "hash": "2b3764ca5d29b932a585977773caf4da"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/AgentsList.tsx": {
+    "mtime": 1774931256.0465407,
+    "hash": "df9de41efa62aa78bceaa5dc78acd12f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Analytics.tsx": {
+    "mtime": 1775041391.509923,
+    "hash": "9a4c9f85bd0860cc5e057f5338e35c00"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Calendar.tsx": {
+    "mtime": 1774681346.221445,
+    "hash": "bd0d340848aa7dbd21706a523def2e37"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/CallDetail.tsx": {
+    "mtime": 1775041890.5638683,
+    "hash": "0387392b49d53f0b46a9e3aa4e4f95c9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/CallLog.tsx": {
+    "mtime": 1775041872.8619437,
+    "hash": "1ea23c64907639861765e2c23798a909"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Dashboard.tsx": {
+    "mtime": 1775041978.4808755,
+    "hash": "c30fc35ecb10c095f3d4a493ac5c56d1"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Integrations.tsx": {
+    "mtime": 1776916450.4991531,
+    "hash": "7178d88c5dc53c85f7b74a124851fadc"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/KnowledgeBase.tsx": {
+    "mtime": 1774682013.0563383,
+    "hash": "e207b1e0f1dd097d86150751954e2a8f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Landing.tsx": {
+    "mtime": 1776916450.518156,
+    "hash": "0243778c039cf56f7b9b145f14cbdf0c"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Login.tsx": {
+    "mtime": 1774681577.8864467,
+    "hash": "81fb39a6394ff0cf2412df47f7a28db1"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Onboarding.tsx": {
+    "mtime": 1776919895.1301396,
+    "hash": "488cce054d5fca1bb472c9b490fe43bd"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/PhoneNumbers.tsx": {
+    "mtime": 1776916450.5101514,
+    "hash": "a82c479007caa2fba08c8222ef4c018f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/Signup.tsx": {
+    "mtime": 1774681613.2364433,
+    "hash": "1faa0899b0d25629758eb5fcd22f5a38"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/settings/Account.tsx": {
+    "mtime": 1774681445.6384435,
+    "hash": "610624e3b47e49d3699c1139001fe963"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/settings/ApiKeys.tsx": {
+    "mtime": 1774681471.0674422,
+    "hash": "9d2fe51ebc1ebe6b8eaeb1055ed267a4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/settings/Billing.tsx": {
+    "mtime": 1774681495.966442,
+    "hash": "108dbda3c08e4fa235566f2539fed53a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/pages/settings/Team.tsx": {
+    "mtime": 1774681526.5914488,
+    "hash": "5f2dd533976a80749998c5dd444316c4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/stores/authStore.ts": {
+    "mtime": 1774888453.2666621,
+    "hash": "9e88b900771e2167a40f0a14dff03326"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/stores/onboardingStore.ts": {
+    "mtime": 1774058249.2527864,
+    "hash": "15bb595968279c43030e38bf6968a068"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/stores/uiStore.ts": {
+    "mtime": 1774680770.778442,
+    "hash": "62fad6d5bd046c98cb8d8e3d4b02ac75"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/src/types/index.ts": {
+    "mtime": 1776916450.5101514,
+    "hash": "7019f02ec581c505e01c9145784a34a1"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/001_knowledge_search_vector.sql": {
+    "mtime": 1774088931.3387647,
+    "hash": "9f3da7c7e622ba4fc90847087ff4b05a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/002_rls_policies.sql": {
+    "mtime": 1774437220.030681,
+    "hash": "b4c34e1e4b16d37c597175a71e3c8430"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/003_failed_writes_table.sql": {
+    "mtime": 1774462578.7215595,
+    "hash": "3b05cb2b0238d47823afc7624729a8e5"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/004_enable_realtime.sql": {
+    "mtime": 1774464060.3093743,
+    "hash": "5f836b8d16ddfc00c7cdab72fc519a06"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/005_team_members.sql": {
+    "mtime": 1774465614.3064618,
+    "hash": "0a9bd70ee5389ec9c05ec9940b3b75fc"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/006_scrape_jobs.sql": {
+    "mtime": 1774466169.8253922,
+    "hash": "9c532b2fac4cab296c31b8a4d286f942"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/migrations/007_clinic_knowledge_runtime.sql": {
+    "mtime": 1775113492.2490032,
+    "hash": "5e215de8be2dd2259b83c8b67e69b730"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/routes/agents.py": {
+    "mtime": 1776088642.4957013,
+    "hash": "05449db8dce25bd2e6a203d6753760fe"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/database/db.py": {
+    "mtime": 1776931349.0023258,
+    "hash": "082a42f0d77b9433f18440512c35d902"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/database/schema.sql": {
+    "mtime": 1776088367.1139135,
+    "hash": "cad1f9d03bb75279294591529d83356e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/database/__init__.py": {
+    "mtime": 1774603381.1062682,
+    "hash": "9133f9a2dddc2456c9cc3dacd252c5bb"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/industry_profiles/base_profile.py": {
+    "mtime": 1774025708.4011714,
+    "hash": "1fd57b207cf371131b7f1036870a1053"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/industry_profiles/dental_profile.py": {
+    "mtime": 1777617962.7210977,
+    "hash": "fa89c954b4016cbd75de26792413ca09"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/industry_profiles/med_spa_profile.py": {
+    "mtime": 1777617978.2319887,
+    "hash": "8bb5d7286041289769fb956899b185b4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/industry_profiles/profile_registry.py": {
+    "mtime": 1774025797.0791693,
+    "hash": "e79588465648d8a7777fe98eb987ed42"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/industry_profiles/__init__.py": {
+    "mtime": 1774025693.8581686,
+    "hash": "faa26b006212b3496ec45b9012e0b049"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/migrations/001_logging_tables.sql": {
+    "mtime": 1772848880.1358573,
+    "hash": "38b9a5f352cac4927b955b636d326d5e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/migrations/002_call_transcripts.sql": {
+    "mtime": 1772848880.136857,
+    "hash": "33362fab308cad99f20e6c98ce3d72c7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/migrations/003_add_unique_constraint_call_transcripts.sql": {
+    "mtime": 1772848880.1378589,
+    "hash": "b0328b76f919993a5d68d7e917f10dad"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/migrations/004_room_locks_created_at.sql": {
+    "mtime": 1772848880.1388583,
+    "hash": "aece87006546ffcf21b466edc5cd5471"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/migrations/005_add_telnyx_telephony_columns.sql": {
+    "mtime": 1776923390.4627254,
+    "hash": "93be514fa83036dd3643c1f75f7d1400"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/models/state.py": {
+    "mtime": 1775115303.6182597,
+    "hash": "b7b2ed791d05cda3e25f1ae506140fc5"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/models/tool_args.py": {
+    "mtime": 1772848880.1448586,
+    "hash": "4beaa33486e3293f5230a6e5c56ebf14"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/models/__init__.py": {
+    "mtime": 1772952651.3906937,
+    "hash": "edfd43e87aeaaac917d5811b0a9dfe73"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/pipelines/azure_tts.py": {
+    "mtime": 1772952651.394698,
+    "hash": "e33090136519099132742381f991904e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/pipelines/pipeline_config.py": {
+    "mtime": 1777620424.0918026,
+    "hash": "b4a69b3f95e1a60484825249d415fbd1"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/pipelines/urdu_prompt.py": {
+    "mtime": 1770566468.0164886,
+    "hash": "543446be264104c66735772447bdb690"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/pipelines/__init__.py": {
+    "mtime": 1770566468.0164886,
+    "hash": "37997e9e68bccf5fa11bf5010f1015a6"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/prompts/agent_prompts.py": {
+    "mtime": 1772848880.2158577,
+    "hash": "a1699078ed67fc1d669e39dcd4caba6b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/prompts/base_prompt.py": {
+    "mtime": 1772848880.2178571,
+    "hash": "19e1c53cc4356836a161e7b56812bc16"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/prompts/__init__.py": {
+    "mtime": 1772848880.2138574,
+    "hash": "7bf5d99aa32f710edff44f1fbc6fdbc7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/check_imports.py": {
+    "mtime": 1776916450.5241528,
+    "hash": "101582bcb90ac08895c5c6140aa6d3f4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/cleanup_all_agents.py": {
+    "mtime": 1774886689.2893164,
+    "hash": "e8de31aab66825573ee1cb2e68d385f4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/eval_clinic_knowledge.py": {
+    "mtime": 1775119313.778857,
+    "hash": "b17e93fb5f0066bdf5d2f82680d1d87b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/init_port_registry.py": {
+    "mtime": 1774603381.1112738,
+    "hash": "4194b515ba52e4422909a0a72f435023"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/publish_test_agent.py": {
+    "mtime": 1776916450.518156,
+    "hash": "484c6227a3c4cf7bdafbdde7706b7d4b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/redeploy_agent.py": {
+    "mtime": 1775012921.8257313,
+    "hash": "d3237ddd44608a55c5c2410d665bab97"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/sync_clinic_knowledge.py": {
+    "mtime": 1775120342.3686047,
+    "hash": "2a98e4de982a54a0a8bfcf840f9c7711"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/test_local.py": {
+    "mtime": 1776916450.5471559,
+    "hash": "e496c2caee40e7bca16c8c5fe5a25124"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/scripts/verify_agent.py": {
+    "mtime": 1774601883.6858823,
+    "hash": "0926df096dc8917ea6db531bdc0eb64a"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/appointment_management_service.py": {
+    "mtime": 1772952651.4006958,
+    "hash": "efd5367e92388efd33ffcfaaa45d95c9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/clinic_knowledge_service.py": {
+    "mtime": 1777617123.0817575,
+    "hash": "f62bdbd30dccef8d6783c7297e4a873b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/database_service.py": {
+    "mtime": 1775018145.8366194,
+    "hash": "73079abf15a633c1c49bb1a98c48a045"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/extraction_service.py": {
+    "mtime": 1777617449.5090494,
+    "hash": "6420a22777ef78499fa3d7e2845ee331"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/scheduling_service.py": {
+    "mtime": 1775018041.278671,
+    "hash": "6cd96095be200c1ca28fb0402af02157"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/telnyx_client.py": {
+    "mtime": 1776935133.6059146,
+    "hash": "2d92ce95ef94e0ef77e186c824ab7f30"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/telnyx_number_service.py": {
+    "mtime": 1776922054.53142,
+    "hash": "2126dbd2703bc9629e4663c9119f299c"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/telnyx_voice.py": {
+    "mtime": 1776088333.6384263,
+    "hash": "d7dd1adf81faa8484042885fab1d09df"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/telnyx_webhook_verifier.py": {
+    "mtime": 1776088333.6554246,
+    "hash": "d500f8c35c1fb4398eb772f86d7492cf"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/services/__init__.py": {
+    "mtime": 1776935377.6140487,
+    "hash": "271e1d2b78a42da2d19b8058801ec846"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/bench_latency.py": {
+    "mtime": 1772951926.4952319,
+    "hash": "050f2a503d5f37a0fdac5ae0ff46d09c"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/conftest.py": {
+    "mtime": 1772900099.304172,
+    "hash": "ac6ccb1de36973ab1f2a352a7fc06aaa"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_agent_flow.py": {
+    "mtime": 1777619241.916427,
+    "hash": "fed6abf632949e47dc3ff7f659b9f53e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_agent_routes.py": {
+    "mtime": 1775101075.536188,
+    "hash": "bc42684313a96ce8a7784bbe319510b3"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_agent_runtime_config.py": {
+    "mtime": 1777620291.1738358,
+    "hash": "7277ec4345697f88f2d11d07af2d7111"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_agent_wrapper.py": {
+    "mtime": 1774602026.2428815,
+    "hash": "e7d83b1272fd9a1d40f8b4bed9dda98f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_assistant_tools.py": {
+    "mtime": 1777780072.8525543,
+    "hash": "310795e7b6fa702324e436ebe789582c"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_booking_flow.py": {
+    "mtime": 1774466993.642609,
+    "hash": "07926f4ef27ad808d17b3b73a109f0c3"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_cancel_reschedule.py": {
+    "mtime": 1774467081.3984818,
+    "hash": "d8172a1886e6d738fa4e73fb4dd0587b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_clinic_knowledge_runtime.py": {
+    "mtime": 1777618322.0241957,
+    "hash": "62efbf6274384e3b62d561f3aa749b33"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_database_service.py": {
+    "mtime": 1773387500.9080975,
+    "hash": "a8e41717b2a779f709c23b92c6a80f09"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_latency_paths.py": {
+    "mtime": 1773397775.5894046,
+    "hash": "11275c3601075180b0c0025c5f9f52ed"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_livekit_plugin_imports.py": {
+    "mtime": 1772874290.007442,
+    "hash": "adac1ff397f3bebdf35269822b6284ae"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_platform_utils.py": {
+    "mtime": 1774609776.592087,
+    "hash": "f5809e74baba7a66699f88ffbfc3d676"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_post_booking_flow.py": {
+    "mtime": 1777617712.2234054,
+    "hash": "b27ee16cbacfe8769db128446b39721f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_redeploy_script.py": {
+    "mtime": 1775012928.4501274,
+    "hash": "6f729dd0f873c74fd1896d047dc2e873"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_scheduling_service.py": {
+    "mtime": 1775018126.9990497,
+    "hash": "7e731d10cdce4573cb1b00c866ef481f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_server_manager.py": {
+    "mtime": 1775101063.1710875,
+    "hash": "345a2bfa242e8bb9d122fcaedc30a0a5"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_state.py": {
+    "mtime": 1773328729.7060685,
+    "hash": "0717430e48b7f347c58caec99e67a46e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_state_transitions.py": {
+    "mtime": 1774467027.6512654,
+    "hash": "da5c499547224af31ffaeca67a9217b5"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_telnyx_number_service.py": {
+    "mtime": 1776935186.6291935,
+    "hash": "fdc383b15cacaf15d93ea1c0d3d6b4e7"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_telnyx_provisioner.py": {
+    "mtime": 1776920304.0194979,
+    "hash": "8c1fba1027dc4054e2cf90067bc8c121"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_timezone.py": {
+    "mtime": 1773327560.1331434,
+    "hash": "5d136dda3997285b609957b645226354"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_time_parsing.py": {
+    "mtime": 1777780056.7100909,
+    "hash": "7afdad969de43b14db8451643c495c3f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_turn_orchestration.py": {
+    "mtime": 1777617711.8794243,
+    "hash": "014289041923b5d856a856cd4a23c3a6"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_turn_taking.py": {
+    "mtime": 1777780246.4532714,
+    "hash": "e2a7f2e2f419e025f88ad4312c2ef0c8"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_twilio_provisioner.py": {
+    "mtime": 1776920301.48008,
+    "hash": "a1a49bf2c9bd41e8abba01b32a94554d"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tests/test_webhook_server.py": {
+    "mtime": 1776935126.5511372,
+    "hash": "633b32bf87f02ccc9f94812ee38ed2f2"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tools/assistant_tools.py": {
+    "mtime": 1777779929.7209384,
+    "hash": "9eba5eda5ac0218e8d4e7687aa9ec282"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/tools/__init__.py": {
+    "mtime": 1772848880.2328565,
+    "hash": "86b936c6211fed7427b6bbee3bef0120"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/agent_flow.py": {
+    "mtime": 1777779880.9794157,
+    "hash": "442950a1f68bfd9723c3353d3d9be88e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/cache.py": {
+    "mtime": 1772848880.2409267,
+    "hash": "f5ea7911b3579d44e26f7dc7050b87a9"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/call_logger.py": {
+    "mtime": 1773015018.7626114,
+    "hash": "457302945d3af8cefdb867487af90085"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/contact_utils.py": {
+    "mtime": 1777780218.8975177,
+    "hash": "36673d98c8604b8d6d8accf86b58e21e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/formatting_utils.py": {
+    "mtime": 1772848880.24193,
+    "hash": "7106abab72f3c51d984b160960e68038"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/latency_metrics.py": {
+    "mtime": 1772848880.242929,
+    "hash": "f16d53d9b2fd279d2aa23b471d6bf835"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/livekit_config.py": {
+    "mtime": 1774865937.137243,
+    "hash": "c0c23c27d521b0b56cdaa070d23c4f95"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/phone_utils.py": {
+    "mtime": 1772848880.2449267,
+    "hash": "3ab5f6623957d1291699cffca3879957"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/slot_cache.py": {
+    "mtime": 1772848880.2459269,
+    "hash": "56dff9d0e3b0f387ef75a0bc928f6177"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/supabase_retry.py": {
+    "mtime": 1774462542.17903,
+    "hash": "9b4afc0efe010c2ed85e017a786989a4"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/turn_taking.py": {
+    "mtime": 1777780226.594193,
+    "hash": "4a1d243f51bce35b0c4991761eed6a90"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/utils/__init__.py": {
+    "mtime": 1776935429.3001568,
+    "hash": "ce39e249f038d1b33170e033110b9f91"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/AGENTS.md": {
+    "mtime": 1777798692.7873087,
+    "hash": "2ed67c68f28bc1ef95ac24167431d7e8"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/CHANGES.md": {
+    "mtime": 1774602559.3113322,
+    "hash": "5f2c7dffc28518f7ab9ebbfb98b8482b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/DEPLOYMENT.md": {
+    "mtime": 1775011026.0613694,
+    "hash": "213d118d057718df836095084fb239bf"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docker-compose.yml": {
+    "mtime": 1774464482.7675092,
+    "hash": "430d22895b9f4544f78094a9b0d49226"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/FEATURES.md": {
+    "mtime": 1774546146.509093,
+    "hash": "826859081da4fe610c35c26f3166ce48"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/HETZNER_REDEPLOY_COMMANDS.md": {
+    "mtime": 1777782394.575085,
+    "hash": "9ce6607b9382499704487b469a1a7956"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/MONITORING.md": {
+    "mtime": 1774610831.493307,
+    "hash": "887906f795d3bc039977835c71a47b88"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/PLATFORM_ARCHITECTURE.md": {
+    "mtime": 1774546148.1659887,
+    "hash": "c8d025e5b0854d32f66b6befcb49476e"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/README.md": {
+    "mtime": 1775011039.0883658,
+    "hash": "031dc360afc5e2ed7b3e3ec00fdd13c6"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/requirements.txt": {
+    "mtime": 1774601989.4238834,
+    "hash": "018afa752c481c8d165247fccd6fbe76"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/TESTING.md": {
+    "mtime": 1774602173.3208792,
+    "hash": "57853e7f6cf3d85942c2d914b2f3bc6b"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/TWILIO_IMPLEMENTATION.md": {
+    "mtime": 1774798801.8621073,
+    "hash": "896f7de9c27b797811df2272b2be5af2"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/_test_urdu_reply.txt": {
+    "mtime": 1772848880.1208549,
+    "hash": "91fce573103ae062afbefe0ea4a62613"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/README.md": {
+    "mtime": 1774546148.77225,
+    "hash": "4b4af510e9a3d36386b76364a4e1c963"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/agent_platform/frontend/index.html": {
+    "mtime": 1774700502.151942,
+    "hash": "21efe4cd2b2706c37f09724b7cc37300"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docs/clinic-info-and-faq-answering-flow.md": {
+    "mtime": 1775104276.2519004,
+    "hash": "b1514733962cdde60efd142ea5685a2f"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docs/DASHBOARD_INDUSTRY_BRANDING.md": {
+    "mtime": 1774026304.406705,
+    "hash": "c927934ba320607ce991dd6855cafe9d"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docs/lead_demo_activation_replace_previous_agent_runbook.md": {
+    "mtime": 1777190538.3865495,
+    "hash": "b85aa4582a6f3a0de2c592d12325b625"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docs/lead_demo_agent_data_automation.md": {
+    "mtime": 1776941260.9691634,
+    "hash": "e1c82ccf5d686c5b3ce4c05511fc4743"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docs/turn_taking_pipeline.md": {
+    "mtime": 1773366416.3523083,
+    "hash": "eafaef48387255ff2ec233d289c910dd"
+  },
+  "/mnt/c/Users/Moiz/Desktop/Agent/Agent/docs/twilio_to_telnyx_status.md": {
+    "mtime": 1776654651.8269641,
+    "hash": "28e2b30c6bb7b1d28e0e2be50b6955aa"
+  }
+}

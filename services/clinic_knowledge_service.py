@@ -52,6 +52,16 @@ FAQ_SUBTYPES = {
     "emergency",
     "general_faq",
 }
+GENERIC_TAXONOMY_SERVICE_NAMES = {
+    "cosmetic",
+    "implant",
+    "implants",
+    "general",
+    "preventive",
+    "restorative",
+    "surgical",
+    "other",
+}
 SERVICE_LIST_SUBTYPES = {"service_list"}
 GENERIC_SERVICE_BOUNDARY_TERMS = {
     "teeth whitening",
@@ -1948,6 +1958,36 @@ def _fallback_search_faq_chunks(
     ]
 
 
+def _score_as_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _retrieval_result_is_confident(top: dict[str, Any], *, semantic_used: bool) -> bool:
+    fts_score = _score_as_float(top.get("fts_score"))
+    semantic_score = _score_as_float(top.get("semantic_score"))
+    combined_score = _score_as_float(top.get("combined_score"))
+    match_source = str(top.get("match_source") or "").lower()
+
+    if match_source == "local":
+        return (combined_score or fts_score or 0.0) >= 1.0
+    if fts_score is not None and fts_score > 0:
+        return True
+    if semantic_used:
+        if semantic_score is not None and semantic_score >= 0.35:
+            return True
+        if combined_score is not None and combined_score >= 0.45:
+            return True
+        return False
+    if combined_score is not None and combined_score < 0.15:
+        return False
+    return True
+
+
 async def _search_faq_chunks(
     question: str,
     *,
@@ -2207,12 +2247,20 @@ def _compose_structured_service_answer(
 
 def _compose_service_list_answer(bundle: ClinicKnowledgeBundle) -> ClinicKnowledgeAnswer:
     service_names = [service.display_name for service in bundle.services if service.active]
-    if not service_names:
+    suspicious = (
+        len(service_names) <= 3
+        and bool(service_names)
+        and all(_normalize_service_key(name) in GENERIC_TAXONOMY_SERVICE_NAMES for name in service_names)
+    )
+    if not service_names or suspicious:
+        fallback = (
+            "I can help with services listed on the website, including facial treatments, injectables, and skin treatments. Which one are you interested in?"
+        )
         return _build_answer(
             subtype="service_list",
             service=None,
             facts_used=[],
-            deterministic_text="I don't have a current service list in my notes right now, but the clinic can walk you through it.",
+            deterministic_text=fallback,
             confidence=0.4,
             fallback_used=True,
         )
@@ -2240,18 +2288,19 @@ async def _compose_faq_answer(
     service: ServiceRecord | None,
     industry_type: str,
 ) -> ClinicKnowledgeAnswer:
+    search_service_id = service.id if service and _looks_like_uuid(service.id) else None
     results, semantic_used = await _search_faq_chunks(
         question,
         bundle=bundle,
         subtype=subtype,
-        service_id=service.id if service else None,
+        service_id=search_service_id,
     )
     if not results and subtype != "general_faq":
         results, semantic_used = await _search_faq_chunks(
             question,
             bundle=bundle,
             subtype="general_faq",
-            service_id=service.id if service else None,
+            service_id=search_service_id,
         )
     if not results:
         return _build_answer(
@@ -2264,6 +2313,29 @@ async def _compose_faq_answer(
         )
 
     top = results[0]
+    if not _retrieval_result_is_confident(top, semantic_used=semantic_used):
+        logger.info(
+            "[CLINIC KNOWLEDGE RETRIEVAL] weak_match_clarify subtype=%s top_id=%s fts=%s semantic=%s combined=%s threshold=hard_gate",
+            subtype,
+            top.get("id"),
+            top.get("fts_score"),
+            top.get("semantic_score"),
+            top.get("combined_score"),
+        )
+        service_name = service.display_name if service else None
+        clarify = (
+            f"Sorry, did you mean {service_name}, or were you asking about another treatment?"
+            if service_name
+            else "Sorry, I didn't quite catch which clinic detail you meant. Could you say that another way?"
+        )
+        return _build_answer(
+            subtype="clarification_needed",
+            service=service,
+            facts_used=[],
+            deterministic_text=clarify,
+            confidence=0.25,
+            fallback_used=True,
+        )
     deterministic_text = _normalize_space(top.get("chunk_text"))
     if subtype in SERVICE_SPECIFIC_SUBTYPES:
         deterministic_text = _extract_service_specific_faq_snippet(
@@ -2395,6 +2467,40 @@ async def resolve_clinic_knowledge_answer(
                 industry_type=industry_type,
             )
     service_ms = (time.perf_counter() - service_started_at) * 1000
+
+    if (
+        subtype == "general_faq"
+        and not explicit
+        and getattr(state, "reason", None)
+        and len(_question_tokens(normalized_question)) <= 3
+        and not any(
+            regex.search(normalized_question)
+            for regex in (HOURS_RE, LOCATION_RE, PARKING_RE, INSURANCE_RE, PAYMENT_RE, POLICY_RE, STAFF_RE, EMERGENCY_RE)
+        )
+    ):
+        active_service = service or bundle.alias_map.get(_normalize_service_key(getattr(state, "reason", None)))
+        service_name = (
+            active_service.display_name
+            if active_service
+            else _normalize_space(getattr(state, "reason", "that treatment"))
+        )
+        answer = _build_answer(
+            subtype="clarification_needed",
+            service=active_service,
+            facts_used=[],
+            deterministic_text=(
+                f"Sorry, did you mean which type of {service_name} is right for you, or were you asking about another treatment?"
+            ),
+            confidence=0.25,
+            fallback_used=True,
+        )
+        _update_state_from_answer(state=state, answer=answer, explicit_service=False)
+        logger.info(
+            "[CLINIC KNOWLEDGE] unclear_query_clarification active_service=%s question=%r",
+            service_name,
+            normalized_question,
+        )
+        return answer
 
     answer_started_at = time.perf_counter()
     if subtype in SERVICE_SPECIFIC_SUBTYPES:

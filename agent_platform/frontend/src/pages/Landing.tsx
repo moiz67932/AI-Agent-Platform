@@ -315,7 +315,7 @@ function HeroCallCard() {
                 <span className="text-[0.58rem] text-emerald-500 font-medium">· 0ms</span>
               </div>
               <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-1.5">
-                <p className="text-[0.58rem] leading-4 text-foyer-t3">Twilio → LiveKit → Bright Smile agent dispatched</p>
+                <p className="text-[0.58rem] leading-4 text-foyer-t3">Telnyx → LiveKit → Bright Smile agent dispatched</p>
               </div>
             </div>
           </div>
@@ -1422,7 +1422,7 @@ function Footer() {
         </div>
         <div className="text-right">
           <p className="text-[11px] text-white/30">&copy; 2026 Foyer. All rights reserved.</p>
-          <p className="text-[10px] text-white/20 mt-0.5">Powered by LiveKit &middot; Twilio &middot; Supabase</p>
+          <p className="text-[10px] text-white/20 mt-0.5">Powered by LiveKit &middot; Telnyx &middot; Supabase</p>
         </div>
       </div>
     </footer>

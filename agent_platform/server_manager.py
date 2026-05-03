@@ -169,8 +169,10 @@ class AgentServerManager:
             "SIP_AUTH_USERNAME": str(agent_config.get("sip_auth_username", "")),
             "SUPABASE_SERVICE_ROLE_KEY": os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
             "SUPABASE_URL": os.getenv("SUPABASE_URL", ""),
-            "TWILIO_AUTH_TOKEN": os.getenv("TWILIO_AUTH_TOKEN", ""),
-            "TWILIO_ACCOUNT_SID": os.getenv("TWILIO_ACCOUNT_SID", ""),
+            "TELNYX_API_KEY": os.getenv("TELNYX_API_KEY", ""),
+            "TELNYX_PUBLIC_KEY": os.getenv("TELNYX_PUBLIC_KEY", ""),
+            "TELNYX_OUTBOUND_VOICE_PROFILE_ID": os.getenv("TELNYX_OUTBOUND_VOICE_PROFILE_ID", ""),
+            "TELNYX_WEBHOOK_API_VERSION": os.getenv("TELNYX_WEBHOOK_API_VERSION", "2"),
             "WEBHOOK_BASE_URL": webhook_base_url,
             "WORKER_PORT": str(worker_port),
         }
@@ -277,7 +279,13 @@ server {{
     def _exec(self, client: paramiko.SSHClient, command: str, *, check: bool = True) -> str:
         """Execute a shell command over SSH and return stdout."""
         sanitized = command
-        for secret_name in ("LIVEKIT_API_SECRET", "TWILIO_AUTH_TOKEN", "SIP_AUTH_PASSWORD", "OPENAI_API_KEY"):
+        for secret_name in (
+            "LIVEKIT_API_SECRET",
+            "SIP_AUTH_PASSWORD",
+            "OPENAI_API_KEY",
+            "TELNYX_API_KEY",
+            "TELNYX_PUBLIC_KEY",
+        ):
             secret_value = os.getenv(secret_name)
             if secret_value:
                 sanitized = sanitized.replace(secret_value, mask_secret(secret_value))
@@ -500,9 +508,35 @@ server {{
 
     def _reload_runtime_processes(self, client: paramiko.SSHClient, agent_id: str) -> None:
         """Reload supervisor and nginx so the updated runtime starts serving traffic."""
-        self._exec(client, "supervisorctl reread")
-        self._exec(client, "supervisorctl update")
-        self._exec(client, f"supervisorctl restart agent-{agent_id}-worker agent-{agent_id}-web")
+        try:
+            self._exec(client, "supervisorctl reread")
+            self._exec(client, "supervisorctl update")
+            self._exec(client, f"supervisorctl restart agent-{agent_id}-worker agent-{agent_id}-web")
+        except Exception as exc:
+            status_output = self._exec(
+                client,
+                f"supervisorctl status agent-{agent_id}-worker agent-{agent_id}-web",
+                check=False,
+            )
+            log_output = self._exec(
+                client,
+                "for f in "
+                + " ".join(
+                    shlex.quote(path)
+                    for path in (
+                        f"{self.log_dir}/agent-{agent_id}-worker.out.log",
+                        f"{self.log_dir}/agent-{agent_id}-worker.err.log",
+                        f"{self.log_dir}/agent-{agent_id}-web.out.log",
+                        f"{self.log_dir}/agent-{agent_id}-web.err.log",
+                    )
+                )
+                + "; do if [ -f \"$f\" ]; then echo \"===== $f =====\"; tail -n 80 \"$f\"; fi; done",
+                check=False,
+            )
+            raise RuntimeError(
+                f"{exc}\nSupervisor status:\n{status_output or '<no status output>'}\n"
+                f"Recent logs:\n{log_output or '<no log output>'}"
+            ) from exc
 
         if self.agents_domain != "localhost":
             self._exec(client, "nginx -t")

@@ -34,8 +34,10 @@ from utils.agent_flow import (
     build_time_parse_candidates,
     ensure_caller_phone_pending,
     has_date_reference,
+    has_time_reference,
     looks_like_phone_input,
     normalize_patient_name,
+    sanitize_time_slot_text,
 )
 from services.database_service import is_slot_free_supabase, book_to_supabase
 from services.scheduling_service import (
@@ -100,6 +102,16 @@ def _sanitize_tool_arg(value: Optional[str]) -> Optional[str]:
     return None if s.lower() in ("null", "none", "") else s
 
 
+def _explicit_name_update_requested(text: Optional[str]) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:my\s+name\s+is|this\s+is|i\s+am|i'm|call\s+me|change\s+my\s+name\s+to|update\s+my\s+name\s+to)\s+",
+            text or "",
+            re.IGNORECASE,
+        )
+    )
+
+
 def email_for_speech(email: str) -> str:
     if not email:
         return "unknown"
@@ -138,6 +150,10 @@ def _phone_confirmation_question(state: PatientState, phone_candidate: str) -> s
         if state.phone_last4:
             return "Is this the right number to send your confirmation to?"
         return "Would you like me to use this number for appointment-related updates?"
+    digits = re.sub(r"\D", "", str(phone_candidate or ""))
+    last4 = state.phone_last4 or (digits[-4:] if len(digits) >= 4 else "")
+    if last4:
+        return f"Can I use the number ending in {last4} for your appointment confirmation and reminders?"
     return "Can I use the number you're calling from for your appointment confirmation and reminders?"
 
 
@@ -149,20 +165,22 @@ def _booking_sentence(state: PatientState) -> str:
     time_str = dt.strftime("%I:%M %p").lstrip("0")
     reason = state.reason or "your appointment"
     if state.full_name:
-        return f"{state.full_name}, you're all set for your {reason} on {day} at {time_str}."
+        return f"Perfect, {state.full_name}. You're booked for {reason} on {day} at {time_str}."
     return f"You're all set for your {reason} on {day} at {time_str}."
 
 
 def _delivery_question_text(state: PatientState) -> str:
     target = _contact_reference(state)
     if target == "this number":
-        return "I'll send your confirmation to this number. Would you like that on WhatsApp, or by SMS on this number?"
+        if state.phone_last4:
+            return f"I'll send confirmation to the number ending in {state.phone_last4}. Would you prefer WhatsApp or SMS?"
+        return "I'll send your confirmation to this number. Would you prefer WhatsApp or SMS?"
     return f"I'll send your confirmation to {target}. Would you like that on WhatsApp, or by SMS instead?"
 
 
 def _apply_delivery_preference(state: PatientState, channel: str) -> str:
     normalized = str(channel).strip().lower()
-    if normalized not in {"whatsapp", "sms"}:
+    if normalized not in {"whatsapp", "sms", "email"}:
         raise ValueError(f"Unsupported delivery channel: {channel}")
 
     state.delivery_channel = normalized
@@ -174,6 +192,8 @@ def _apply_delivery_preference(state: PatientState, channel: str) -> str:
 
     if normalized == "sms":
         return "No problem, I'll send it by SMS."
+    if normalized == "email":
+        return "No problem, I'll note email for the confirmation."
     return "Perfect, I'll send it on WhatsApp."
 
 
@@ -466,6 +486,7 @@ def _normalize_knowledge_articles(articles: Optional[Sequence[Dict[str, Any]]]) 
 
 def _normalize_voice_reply(text: str) -> str:
     cleaned = " ".join((text or "").split()).strip()
+    cleaned = re.sub(r"\bSource:\s*[^.?!]*(?:[.?!]|$)", "", cleaned, flags=re.IGNORECASE).strip()
     if cleaned and cleaned[-1] not in ".!?":
         cleaned += "."
     return cleaned
@@ -1604,6 +1625,46 @@ class AssistantTools:
         time_suggestion = _sanitize_tool_arg(time_suggestion)
 
         spoken_name = normalize_patient_name(extract_name_quick(state.last_user_text or ""))
+        service_from_last_text = extract_reason_quick(
+            state.last_user_text or "",
+            industry_type=self._industry_type,
+        )
+
+        if (
+            name
+            and state.full_name
+            and name.strip().lower() != state.full_name.strip().lower()
+        ):
+            explicit_name_update = _explicit_name_update_requested(state.last_user_text)
+            if (
+                not explicit_name_update
+                or service_from_last_text
+                or not spoken_name
+                or spoken_name.strip().lower() != name.strip().lower()
+            ):
+                logger.warning(
+                    "[SLOT CONFLICT] rejected_name_candidate=%r current=%r service_candidate=%r expected_runtime_slot=%r last_user_text=%r",
+                    name,
+                    state.full_name,
+                    service_from_last_text,
+                    getattr(state, "expected_slot", None),
+                    state.last_user_text,
+                )
+                name = None
+
+        if (
+            name
+            and service_from_last_text
+            and not _explicit_name_update_requested(state.last_user_text)
+            and name.strip().lower() != (state.full_name or "").strip().lower()
+        ):
+            logger.warning(
+                "[SLOT CONFLICT] rejected_name_candidate=%r because_service_wins service=%r last_user_text=%r",
+                name,
+                service_from_last_text,
+                state.last_user_text,
+            )
+            name = None
 
         if (
             name
@@ -1664,6 +1725,7 @@ class AssistantTools:
             previous_dt_local = state.dt_local
             known_date_text = _date_hint_for_prompt(state, fallback_text=previous_dt_text)
             cleaned_suggestion = " ".join(time_suggestion.split()).strip()
+            sanitized_time_suggestion = sanitize_time_slot_text(cleaned_suggestion)
             prior_time_status = state.time_status
             state.time_status = "validating"
             logger.info(f"[TOOL] Checking time: {time_suggestion}")
@@ -1679,17 +1741,23 @@ class AssistantTools:
                 ]
                 suggestion_lower = cleaned_suggestion.lower()
                 has_date = any(m in suggestion_lower for m in month_words) or bool(re.search(r"\b\d{1,2}[/-]\d{1,2}\b", suggestion_lower))
-                has_time = any(w in suggestion_lower for w in time_only_words) or bool(re.search(r"\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm)\b", suggestion_lower, re.IGNORECASE))
+                has_time = any(w in suggestion_lower for w in time_only_words) or bool(re.search(r"\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm|a\.?m\.?|p\.?m\.?)\b", suggestion_lower, re.IGNORECASE))
 
                 parse_input = cleaned_suggestion
+                must_anchor_time_to_saved_date = bool(
+                    not has_date
+                    and has_time
+                    and (known_date_text or previous_dt_text)
+                )
                 if not has_date and has_time and previous_dt_text and previous_dt_text != cleaned_suggestion:
                     # User gave time-only (e.g. "3 PM") — combine with saved date text
-                    combined = f"{previous_dt_text} at {cleaned_suggestion}"
+                    combined_time = sanitized_time_suggestion or cleaned_suggestion
+                    combined = f"{previous_dt_text} at {combined_time}"
                     logger.info(f"[TOOL] Combined date+time: '{combined}'")
                     parse_input = combined
 
                 result = parse_datetime_natural(parse_input, tz_hint=BOOKING_TZ)
-                recent_context = state.recent_user_context() if hasattr(state, "recent_user_context") else ""
+                recent_context = ""
                 if prior_time_status == "invalid" and (
                     has_date
                     or (
@@ -1705,6 +1773,12 @@ class AssistantTools:
                     previous_text=known_date_text or previous_dt_text,
                 )
                 parse_candidates = parse_candidates or [parse_input]
+                if must_anchor_time_to_saved_date:
+                    parse_candidates = [
+                        candidate
+                        for candidate in parse_candidates
+                        if has_date_reference(candidate)
+                    ] or [parse_input]
                 for candidate in parse_candidates:
                     if candidate == parse_input:
                         continue
@@ -1717,8 +1791,23 @@ class AssistantTools:
                     ):
                         parse_input = candidate
                         result = attempt
-                        logger.info(f"[TOOL] Time parse override: '{time_suggestion}' -> '{parse_input}'")
+                        logger.info(
+                            "[TIME PARSE] override raw_user_text=%r normalized_date_text=%r normalized_time_text=%r prior_date_context=%r final_candidate=%r",
+                            time_suggestion,
+                            cleaned_suggestion if has_date_reference(cleaned_suggestion) else "",
+                            cleaned_suggestion if has_time_reference(cleaned_suggestion) else "",
+                            known_date_text or previous_dt_text or "",
+                            parse_input,
+                        )
                         break
+                logger.info(
+                    "[TIME PARSE] raw_user_text=%r normalized_date_text=%r normalized_time_text=%r prior_date_context=%r final_datetime=%r",
+                    time_suggestion,
+                    cleaned_suggestion if has_date_reference(cleaned_suggestion) else "",
+                    cleaned_suggestion if has_time_reference(cleaned_suggestion) else "",
+                    known_date_text or previous_dt_text or "",
+                    (result.get("datetime").isoformat() if result.get("datetime") else None),
+                )
 
                 # Handle date-only result (no time was specified by user)
                 if result.get("date_only") or result.get("clarification_type") == "time_missing":
@@ -1963,7 +2052,7 @@ class AssistantTools:
             state.contact_phase_started = True
             state.pending_confirm = None if state.pending_confirm == "phone" else state.pending_confirm
             state.pending_confirm_field = None if state.pending_confirm_field == "phone" else state.pending_confirm_field
-            logger.info(f"[TOOL] Phone confirmed: {state.phone_e164}")
+            logger.info(f"[TOOL] Phone confirmed: ***{state.phone_last4 or str(state.phone_e164)[-4:]}")
             _refresh_memory()
             if state.full_name and state.dt_local and state.reason:
                 return "Phone saved. All info complete. Book now."
@@ -1985,7 +2074,7 @@ class AssistantTools:
             _refresh_memory()
             return "No problem. What number would you like me to use instead?"
 
-    @llm.function_tool(description="Save whether appointment confirmation should be sent on WhatsApp or SMS.")
+    @llm.function_tool(description="Save whether appointment confirmation should be sent on WhatsApp, SMS, or email.")
     async def set_delivery_preference(self, channel: str) -> str:
         state = self.state
         if not state:

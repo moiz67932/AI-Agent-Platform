@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS agents (
     port INTEGER UNIQUE,
     subdomain TEXT UNIQUE,
     phone_number TEXT UNIQUE,
-    twilio_phone_sid TEXT,
+    telephony_provider TEXT NOT NULL DEFAULT 'telnyx',
+    external_number_id TEXT,
+    voice_connection_id TEXT,
+    provider_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     status TEXT NOT NULL DEFAULT 'inactive',
     deploy_error TEXT,
     hetzner_server_ip TEXT,
@@ -35,7 +38,10 @@ ALTER TABLE agents ADD COLUMN IF NOT EXISTS config_json JSONB NOT NULL DEFAULT '
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS port INTEGER;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS subdomain TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS phone_number TEXT;
-ALTER TABLE agents ADD COLUMN IF NOT EXISTS twilio_phone_sid TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS telephony_provider TEXT NOT NULL DEFAULT 'telnyx';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS external_number_id TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS voice_connection_id TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS provider_config_json JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS deploy_error TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS hetzner_server_ip TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS livekit_agent_name TEXT;
@@ -56,11 +62,26 @@ BEGIN
     END;
 END $$;
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'twilio_phone_sid'
+    ) THEN
+        UPDATE agents
+        SET external_number_id = COALESCE(external_number_id, twilio_phone_sid)
+        WHERE twilio_phone_sid IS NOT NULL;
+        ALTER TABLE agents DROP COLUMN twilio_phone_sid;
+    END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_port_unique ON agents(port) WHERE port IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_subdomain_unique ON agents(subdomain) WHERE subdomain IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_phone_number_unique ON agents(phone_number) WHERE phone_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_user_id ON agents(user_id);
+CREATE INDEX IF NOT EXISTS idx_agents_telephony_provider ON agents(telephony_provider);
 
 -- =============================================================================
 -- PORT REGISTRY
@@ -83,7 +104,10 @@ CREATE TABLE IF NOT EXISTS call_logs (
     agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     clinic_id UUID,
     organization_id UUID,
-    twilio_call_sid TEXT UNIQUE,
+    telephony_provider TEXT NOT NULL DEFAULT 'telnyx',
+    provider_call_id TEXT UNIQUE,
+    provider_call_leg_id TEXT,
+    provider_call_session_id TEXT,
     livekit_room TEXT,
     caller_phone TEXT,
     status TEXT NOT NULL DEFAULT 'initiated',
@@ -94,9 +118,43 @@ CREATE TABLE IF NOT EXISTS call_logs (
     ended_at TIMESTAMPTZ
 );
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'call_logs' AND column_name = 'twilio_call_sid'
+    ) THEN
+        UPDATE call_logs
+        SET provider_call_id = COALESCE(provider_call_id, twilio_call_sid)
+        WHERE twilio_call_sid IS NOT NULL;
+        ALTER TABLE call_logs DROP COLUMN twilio_call_sid;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_call_logs_agent_id_created_at ON call_logs(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_call_logs_status ON call_logs(status);
-CREATE INDEX IF NOT EXISTS idx_call_logs_twilio_call_sid ON call_logs(twilio_call_sid);
+CREATE INDEX IF NOT EXISTS idx_call_logs_provider_call_id ON call_logs(provider_call_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_provider_call_session_id ON call_logs(provider_call_session_id);
+
+-- =============================================================================
+-- TELEPHONY WEBHOOK EVENTS
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS telephony_webhook_events (
+    event_id TEXT PRIMARY KEY,
+    telephony_provider TEXT NOT NULL,
+    agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+    provider_call_id TEXT,
+    event_type TEXT NOT NULL,
+    payload JSONB,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_telephony_webhook_events_provider_call_id
+    ON telephony_webhook_events(provider_call_id);
+CREATE INDEX IF NOT EXISTS idx_telephony_webhook_events_received_at
+    ON telephony_webhook_events(received_at DESC);
 
 -- =============================================================================
 -- APPOINTMENTS

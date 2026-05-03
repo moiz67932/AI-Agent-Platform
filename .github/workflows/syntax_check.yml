@@ -20,7 +20,7 @@ jobs:
           python -m py_compile database/db.py
           python -m py_compile agent_platform/utils.py
           python -m py_compile agent_platform/server_manager.py
-          python -m py_compile agent_platform/twilio_provisioner.py
+          python -m py_compile agent_platform/telnyx_provisioner.py
           python -m py_compile agent_platform/routes/agents.py
           python -m py_compile webhook_server.py
           python -m py_compile post_call_pipeline.py

@@ -123,7 +123,7 @@ class PostBookingFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(instruction)
         self.assertIn("Do not greet, welcome, or introduce yourself again.", instruction or "")
-        self.assertIn("Would you like that on WhatsApp, or by SMS on this number?", instruction or "")
+        self.assertIn("Would you prefer WhatsApp or SMS?", instruction or "")
         self.assertIn("answer it briefly before asking for anything else", instruction or "")
 
     async def test_whatsapp_choice_is_handled_deterministically(self) -> None:
@@ -238,7 +238,7 @@ class PostBookingFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.delivery_preference_pending)
         self.assertFalse(state.anything_else_pending)
         self.assertIn("$299", session.say_calls[0][0])
-        self.assertIn("Would you like that on WhatsApp, or by SMS on this number?", session.say_calls[0][0])
+        self.assertIn("Would you prefer WhatsApp or SMS?", session.say_calls[0][0])
 
     async def test_delivery_side_follow_up_uses_fresh_service_context(self) -> None:
         state = _booked_state()
@@ -279,7 +279,7 @@ class PostBookingFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "consumed")
         self.assertTrue(state.delivery_preference_pending)
         self.assertIn("Teeth whitening usually takes about 30 minutes.", session.say_calls[0][0])
-        self.assertIn("Would you like that on WhatsApp, or by SMS on this number?", session.say_calls[0][0])
+        self.assertIn("Would you prefer WhatsApp or SMS?", session.say_calls[0][0])
 
     async def test_booking_with_known_delivery_asks_anything_else(self) -> None:
         state = _booked_state()
@@ -306,7 +306,7 @@ class PostBookingFlowTests(unittest.IsolatedAsyncioTestCase):
             result = await tools.confirm_and_book_appointment()
 
         self.assertTrue(state.delivery_preference_pending)
-        self.assertIn("Would you like that on WhatsApp, or by SMS on this number?", result)
+        self.assertIn("Would you prefer WhatsApp or SMS?", result)
         self.assertNotIn(state.phone_e164 or "", result)
 
     async def test_final_closing_path_sends_goodbye_and_schedules_disconnect(self) -> None:

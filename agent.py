@@ -104,7 +104,7 @@ from config import (
     EXPECTED_SLOT_ENABLE_DATE_TIME_FAST_PATH,
 )
 from models.state import PatientState, YES_PAT, NO_PAT
-from pipelines.pipeline_config import get_pipeline_components
+from pipelines.pipeline_config import build_stt_keyterms_from_context, get_pipeline_components
 from pipelines.urdu_prompt import URDU_SYSTEM_PROMPT
 from services.database_service import fetch_clinic_context_optimized
 from services.scheduling_service import load_schedule_from_settings, get_duration_for_service
@@ -119,6 +119,7 @@ from utils.turn_taking import (
     build_policy_decision,
     format_policy_log,
     format_tracker_log,
+    ignored_transcript_reason,
     preview_turn,
     strip_duplicate_acknowledgement,
 )
@@ -243,7 +244,7 @@ WORKFLOW — 1 question at a time, 1-2 sentences max:
 4. Time -> call update_patient_record(time_suggestion="...") with natural language like "tomorrow at 2pm".
    - If slot is taken, the tool returns alternatives — offer them immediately.
    - If user says a month without a day (e.g. "February at 2pm") -> ask which day.
-5. ONLY after name AND reason AND time are ALL captured: ask "Can I use the number you're calling from for your appointment confirmation and reminders?"
+5. ONLY after name AND reason AND time are ALL captured: ask "Can I use the number ending in the caller ID's last 4 digits for your appointment confirmation and reminders?"
    - NEVER ask for phone confirmation until all three of name, reason, and time are confirmed.
    - If caller says "yes" / "sure" / "use this number" / "the one I'm calling from" -> call confirm_phone(confirmed=True) IMMEDIATELY. Do not ask again.
    - If caller says "no" or gives a different number -> call update_patient_record(phone=...).
@@ -258,10 +259,10 @@ RULES:
 - For pricing, hours, service-detail questions, use the deterministic clinic-info path — do not improvise.
 - Call update_patient_record IMMEDIATELY when you hear any info. Never wait.
 - Normalize spoken input before saving: "three one zero" -> "310", "at gmail dot com" -> "@gmail.com".
-- Once caller ID is confirmed, refer to it as "the number you're calling from", "this number", or "your number" — do not repeat the full digits unless the caller asks.
-- When asking to confirm caller ID, phrase it naturally around appointment confirmations, booking updates, or reminders.
+- Once caller ID is confirmed, refer to it by last 4 digits, "this number", or "your number" — do not repeat the full digits unless the caller asks.
+- When asking to confirm caller ID, say the last 4 digits if available and phrase it naturally around appointment confirmations, booking updates, or reminders.
 - CRITICAL PERSPECTIVE RULE: You are the AGENT. The CALLER is on the other end. NEVER say "I'm calling from" or "the number I'm calling from" — that is the caller's perspective. Always say "the number YOU'RE calling from" or "this number".
-- NEVER parrot back the caller's own phrasing when it creates a perspective inversion. If the caller says 'use the number I'm calling from', you respond 'Perfect, I'll use this number for your confirmation and reminders.'
+- NEVER parrot back the caller's own phrasing when it creates a perspective inversion. If the caller says 'use the number I'm calling from', respond from the receptionist perspective, like 'Perfect, I'll use the number ending in 1234.'
 - Never say "booked" until the tool confirms it.
 - Never admit you are AI — say "I'm the office assistant."
 - Never offer callbacks (you cannot dial out).
@@ -854,6 +855,8 @@ def _infer_expected_slot_from_response(
 
 def _caller_number_confirmation_message(state: PatientState) -> str:
     if state.using_caller_number or state.confirmed_contact_number_source == "caller_id":
+        if state.phone_last4:
+            return f"Perfect, I'll use the number ending in {state.phone_last4}."
         return "Perfect, I'll use this number for your confirmation and reminders."
     return "Perfect, I've noted that down."
 
@@ -977,7 +980,8 @@ async def _handle_deterministic_confirmation_turn(
     if not pending:
         return "none"
 
-    confirm_intent = resolve_confirmation_intent(normalized)
+    caller_phone = state.phone_pending or state.detected_phone or state.phone_e164
+    confirm_intent = resolve_confirmation_intent(normalized, caller_e164=caller_phone)
     if confirm_intent is None:
         return "none"
 
@@ -1281,6 +1285,7 @@ async def _entrypoint_impl(ctx: JobContext):
         "continuation_task": None,
         "planned_filler_text": None,
         "last_policy_decision": None,
+        "processed_routes": set(),
     }
 
     def _set_expected_slot(slot: Optional[str | ExpectedUserSlot], *, reason: str) -> None:
@@ -1312,6 +1317,7 @@ async def _entrypoint_impl(ctx: JobContext):
 
     def _sanitize_spoken_output_for_tts(text: str, *, skip_clinic_info_pruning: bool = False) -> str:
         cleaned = " ".join((text or "").split()).strip()
+        cleaned = re.sub(r"\bSource:\s*[^.?!]*(?:[.?!]|$)", "", cleaned, flags=re.IGNORECASE).strip()
         if not cleaned or skip_clinic_info_pruning or not clinic_knowledge_articles:
             return cleaned
 
@@ -1348,6 +1354,11 @@ async def _entrypoint_impl(ctx: JobContext):
         spoken_text = _sanitize_spoken_output_for_tts(
             text,
             skip_clinic_info_pruning=skip_clinic_info_pruning,
+        )
+        logger.info(
+            "[TTS SANITIZE] before=%r after=%r",
+            " ".join((text or "").split()).strip()[:160],
+            spoken_text[:160],
         )
         try:
             return _session_say(
@@ -1558,6 +1569,12 @@ async def _entrypoint_impl(ctx: JobContext):
         agent_lang=agent_lang,
         stt_aggressive=STT_AGGRESSIVE_ENDPOINTING,
         latency_debug=LATENCY_DEBUG,
+        stt_keyterms=build_stt_keyterms_from_context(
+            clinic_info=clinic_info,
+            settings=settings,
+            industry_type=industry_type,
+            knowledge_articles=clinic_knowledge_articles,
+        ),
     )
     stt_instance = pipeline["stt"]
     llm_instance = pipeline["llm"]
@@ -1727,6 +1744,19 @@ async def _entrypoint_impl(ctx: JobContext):
             _cancel_scheduled_filler()
             _interrupt_filler(force=True)
             route = str(decision.deterministic_route or "")
+            turn_id = turn_tracker.snapshot.logical_turn_id
+            route_key = (turn_id, route or str(decision.action.value))
+            processed_routes = _turn_runtime.setdefault("processed_routes", set())
+            if route_key in processed_routes:
+                logger.warning(
+                    "[FAST PATH] duplicate_route_suppressed turn=%s route=%s",
+                    turn_id,
+                    route or "-",
+                )
+                return True
+            processed_routes.add(route_key)
+            if len(processed_routes) > 32:
+                _turn_runtime["processed_routes"] = set(list(processed_routes)[-16:])
 
             resolved_service = (turn_tracker.snapshot.service or "").strip()
             if (
@@ -1854,6 +1884,18 @@ async def _entrypoint_impl(ctx: JobContext):
             _turn_runtime["planned_filler_text"] = None
             _cancel_scheduled_filler()
             _interrupt_filler(force=True)
+            turn_id = turn_tracker.snapshot.logical_turn_id
+            route = str(decision.deterministic_route or decision.lookup_tool or "lookup")
+            route_key = (turn_id, route)
+            processed_routes = _turn_runtime.setdefault("processed_routes", set())
+            if route_key in processed_routes:
+                logger.warning(
+                    "[FAST PATH] duplicate_lookup_suppressed turn=%s route=%s",
+                    turn_id,
+                    route,
+                )
+                return True
+            processed_routes.add(route_key)
             # Mark response started BEFORE the async lookup
             turn_tracker.mark_main_response_started()
             await _run_lookup_with_bridge(
@@ -1909,6 +1951,16 @@ async def _entrypoint_impl(ctx: JobContext):
     class ReceptionAgent(Agent):
         async def on_user_turn_completed(self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage) -> None:
             text = (new_message.text_content or "").strip()
+            noise_reason = ignored_transcript_reason(text)
+            if noise_reason:
+                logger.info(
+                    "[TRANSCRIPT FILTER] ignored user_turn_completed reason=%s raw=%r",
+                    noise_reason,
+                    text,
+                )
+                _cancel_scheduled_filler()
+                raise llm.StopResponse()
+
             seeded = _seed_state_from_recent_context(state, schedule, industry_type=industry_type)
             if seeded:
                 logger.info(f"[STATE PREFILL] {' | '.join(seeded)}")
@@ -2246,7 +2298,24 @@ async def _entrypoint_impl(ctx: JobContext):
     def _on_user_transcribed(ev):
         global _current_turn
         text = (getattr(ev, "transcript", "") or getattr(ev, "text", "") or "").strip()
-        if not text:
+        confidence = getattr(ev, "confidence", None)
+        if confidence is None:
+            try:
+                alternatives = getattr(ev, "alternatives", None) or []
+                if alternatives:
+                    confidence = getattr(alternatives[0], "confidence", None)
+            except Exception:
+                confidence = None
+        ignore_reason = ignored_transcript_reason(text, confidence=confidence)
+        if ignore_reason:
+            logger.info(
+                "[TRANSCRIPT FILTER] ignored reason=%s raw=%r confidence=%s",
+                ignore_reason,
+                text,
+                confidence,
+            )
+            _cancel_pending_continuation("ignored_transcript")
+            _cancel_scheduled_filler()
             return
         is_final = bool(getattr(ev, "is_final", True))
 
@@ -2363,6 +2432,12 @@ async def _entrypoint_impl(ctx: JobContext):
         _cancel_pending_continuation("user_resumed_speaking")
         _cancel_scheduled_filler()
         _interrupt_filler(force=True)
+        try:
+            if hasattr(session, "interrupt"):
+                session.interrupt()
+                logger.info("[INTERRUPT] cancelled_pending_agent_speech user_resumed")
+        except Exception as exc:
+            logger.debug(f"[INTERRUPT] session interrupt skipped: {exc}")
 
     def _on_agent_state_changed(ev):
         if getattr(ev, "new_state", None) != "speaking":

@@ -88,11 +88,11 @@ class AgentRuntimeConfigTests(unittest.TestCase):
     def test_system_prompt_uses_booking_confirmation_wording_for_phone(self) -> None:
         source = AGENT_PATH.read_text(encoding="utf-8")
         self.assertIn(
-            'ask "Can I use the number you\'re calling from for your appointment confirmation and reminders?"',
+            'ask "Can I use the number ending in the caller ID\'s last 4 digits for your appointment confirmation and reminders?"',
             source,
         )
         self.assertIn(
-            "When asking to confirm caller ID, phrase it naturally around appointment confirmations, booking updates, or reminders.",
+            "When asking to confirm caller ID, say the last 4 digits if available",
             source,
         )
 
@@ -100,12 +100,21 @@ class AgentRuntimeConfigTests(unittest.TestCase):
         source = AGENT_PATH.read_text(encoding="utf-8")
         self.assertIn("def _sanitize_spoken_output_for_tts", source)
         self.assertIn("prune_clinic_response_for_tts(", source)
-        self.assertIn("spoken_text = _sanitize_spoken_output_for_tts(text)", source)
+        self.assertIn("spoken_text = _sanitize_spoken_output_for_tts(", source)
 
     def test_clinic_faq_prompt_context_is_index_only(self) -> None:
         source = AGENT_PATH.read_text(encoding="utf-8")
         self.assertIn('lines.append(f"- {label}{title}")', source)
         self.assertNotIn('lines.append(f"- {label}{title}: {body}")', source)
+
+    def test_stt_keyterms_include_clinic_and_med_spa_services(self) -> None:
+        source = (ROOT / "pipelines" / "pipeline_config.py").read_text(encoding="utf-8")
+
+        self.assertIn("def build_stt_keyterms_from_context", source)
+        self.assertIn("clinic_info.get(\"name\")", source)
+        self.assertIn("HydraFacial", source)
+        self.assertIn("PDO threads", source)
+        self.assertIn("stt_keyterms=", AGENT_PATH.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

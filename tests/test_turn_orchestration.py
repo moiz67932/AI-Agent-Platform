@@ -86,6 +86,89 @@ class DeterministicTurnTests(unittest.IsolatedAsyncioTestCase):
         interrupt_filler.assert_called_once()
         mark_direct.assert_called_once()
 
+    async def test_phone_confirmation_accepts_number_you_are_calling_from(self) -> None:
+        from datetime import datetime
+
+        state = PatientState(
+            full_name="Moiz",
+            reason="HydraFacial",
+            dt_local=datetime(2026, 5, 1, 13, 0),
+            time_status="valid",
+            phone_pending="+13105558914",
+            phone_last4="8914",
+            pending_confirm="phone",
+            pending_confirm_field="phone",
+            contact_phase_started=True,
+        )
+        state.phone_source = "sip"
+        session = _FakeSession()
+
+        async def _confirm_phone(*, confirmed: bool):
+            state.phone_confirmed = confirmed
+            state.phone_e164 = state.phone_pending
+            state.using_caller_number = True
+            state.confirmed_contact_number_source = "caller_id"
+            state.pending_confirm = None
+            state.pending_confirm_field = None
+            return "Phone saved."
+
+        tools = SimpleNamespace(
+            confirm_phone=AsyncMock(side_effect=_confirm_phone),
+            confirm_email=AsyncMock(),
+            confirm_and_book_appointment=AsyncMock(return_value="Booked."),
+        )
+
+        result = await _handle_deterministic_confirmation_turn(
+            text="The number you're calling from.",
+            state=state,
+            assistant_tools=tools,
+            session=session,
+            cancel_scheduled_filler=Mock(),
+            interrupt_filler=Mock(),
+            refresh_memory_async=AsyncMock(),
+            mark_direct_response=Mock(),
+        )
+
+        self.assertEqual(result, "consumed")
+        self.assertEqual(tools.confirm_phone.await_count, 1)
+        self.assertEqual(tools.confirm_and_book_appointment.await_count, 1)
+
+    async def test_phone_confirmation_rejected_asks_for_alternate(self) -> None:
+        from datetime import datetime
+
+        state = PatientState(
+            full_name="Moiz",
+            reason="HydraFacial",
+            dt_local=datetime(2026, 5, 1, 13, 0),
+            time_status="valid",
+            phone_pending="+13105558914",
+            phone_last4="8914",
+            pending_confirm="phone",
+            pending_confirm_field="phone",
+            contact_phase_started=True,
+        )
+        session = _FakeSession()
+        tools = SimpleNamespace(
+            confirm_phone=AsyncMock(return_value="No problem. What number would you like me to use instead?"),
+            confirm_email=AsyncMock(),
+            confirm_and_book_appointment=AsyncMock(),
+        )
+
+        result = await _handle_deterministic_confirmation_turn(
+            text="No, use another number.",
+            state=state,
+            assistant_tools=tools,
+            session=session,
+            cancel_scheduled_filler=Mock(),
+            interrupt_filler=Mock(),
+            refresh_memory_async=AsyncMock(),
+            mark_direct_response=Mock(),
+        )
+
+        self.assertEqual(result, "consumed")
+        self.assertEqual(tools.confirm_phone.await_args.kwargs["confirmed"], False)
+        self.assertEqual(session.say_calls[0][0], "No problem. What number should I use instead?")
+
     async def test_phone_confirmation_incomplete_turn_prompts_missing_slot_without_booking(self) -> None:
         from datetime import datetime
 
@@ -131,7 +214,7 @@ class DeterministicTurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tools.confirm_and_book_appointment.await_count, 0)
         self.assertEqual(
             session.say_calls[0][0],
-            "Perfect, I'll use this number for your confirmation and reminders. What name should I put on the appointment?",
+            "Perfect, I'll use the number ending in 0001. What name should I put on the appointment?",
         )
 
     async def test_duplicate_confirmation_is_consumed_without_second_action(self) -> None:

@@ -44,3 +44,7 @@ node_modules/
 # Agent runtime dirs (created on server, not in repo)
 /opt/agents/
 .mcp.json
+.codex/config.toml
+.env
+.env.*
+!.env.example

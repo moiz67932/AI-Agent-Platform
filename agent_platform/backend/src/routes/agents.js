@@ -13,6 +13,40 @@ import { normalizeAgentRecord } from '../lib/callData.js';
 
 const DEPLOY_API_URL = (process.env.DEPLOY_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
+async function readDeployResponse(response) {
+  const payload = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, payload };
+}
+
+function isMissingColumnError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toUpperCase();
+  return code === '42703' || message.includes('column') && message.includes('does not exist');
+}
+
+async function fetchAgentLifecycleRecord(agentId, orgId) {
+  const modernSelect = 'id, status, port, phone_number, external_number_id, voice_connection_id, livekit_trunk_id, livekit_dispatch_rule_id';
+  const legacySelect = 'id, status, port, phone_number, twilio_phone_sid';
+
+  const modernResult = await supabase
+    .from('agents')
+    .select(modernSelect)
+    .eq('id', agentId)
+    .eq('organization_id', orgId)
+    .single();
+
+  if (!modernResult.error || !isMissingColumnError(modernResult.error)) {
+    return modernResult;
+  }
+
+  return supabase
+    .from('agents')
+    .select(legacySelect)
+    .eq('id', agentId)
+    .eq('organization_id', orgId)
+    .single();
+}
+
 const router = Router();
 
 // GET /api/agents
@@ -205,9 +239,55 @@ router.patch('/:id/status', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
+    const { data: agent, error: fetchError } = await fetchAgentLifecycleRecord(req.params.id, req.orgId);
+
+    if (fetchError || !agent) return res.status(404).json({ error: 'Agent not found' });
+
+    if (status === 'live') {
+      if (String(agent.status).toLowerCase() !== 'live') {
+        const deployRes = await fetch(`${DEPLOY_API_URL}/api/agents/${req.params.id}/publish-async`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const payload = await deployRes.json().catch(() => ({}));
+        if (!deployRes.ok) return res.status(deployRes.status).json(payload);
+
+        const optimisticStatus = payload?.status === 'live' ? 'live' : 'deploying';
+        const { data, error } = await supabase
+          .from('agents')
+          .update({ status: optimisticStatus, deploy_error: null, updated_at: new Date().toISOString() })
+          .eq('id', req.params.id)
+          .eq('organization_id', req.orgId)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return res.json({ data });
+      }
+    } else {
+      const hasInfra =
+        agent.port ||
+        agent.twilio_phone_sid ||
+        agent.external_number_id ||
+        agent.voice_connection_id ||
+        agent.livekit_trunk_id ||
+        agent.livekit_dispatch_rule_id;
+
+      if (hasInfra || String(agent.status).toLowerCase() === 'deploying') {
+        const unpublishRes = await fetch(`${DEPLOY_API_URL}/api/agents/${req.params.id}/unpublish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const { ok, status: unpublishStatus, payload } = await readDeployResponse(unpublishRes);
+        if (!ok && unpublishStatus !== 404) return res.status(unpublishStatus).json(payload);
+      }
+    }
+
     const { data, error } = await supabase
       .from('agents')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({ status, deploy_error: null, updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
       .eq('organization_id', req.orgId)
       .select()
@@ -329,17 +409,12 @@ router.delete('/:id', requireRole('owner'), async (req, res, next) => {
     const { id } = req.params;
 
     // Verify the agent belongs to this org first
-    const { data: agent, error: fetchErr } = await supabase
-      .from('agents')
-      .select('id, status, port, phone_number, twilio_phone_sid, livekit_trunk_id, livekit_dispatch_rule_id')
-      .eq('id', id)
-      .eq('organization_id', req.orgId)
-      .single();
+    const { data: agent, error: fetchErr } = await fetchAgentLifecycleRecord(id, req.orgId);
     if (fetchErr || !agent) return res.status(404).json({ error: 'Agent not found' });
 
     // If the agent has infra deployed, unpublish it from the server first
     const hasInfra = agent.status === 'live' || agent.status === 'deploying' ||
-      agent.port || agent.twilio_phone_sid || agent.livekit_trunk_id || agent.livekit_dispatch_rule_id;
+      agent.port || agent.twilio_phone_sid || agent.external_number_id || agent.voice_connection_id || agent.livekit_trunk_id || agent.livekit_dispatch_rule_id;
 
     if (hasInfra) {
       try {
@@ -348,9 +423,10 @@ router.delete('/:id', requireRole('owner'), async (req, res, next) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
         });
-        if (!deployRes.ok) {
-          const body = await deployRes.text();
-          console.error(`[delete-agent] unpublish returned ${deployRes.status}: ${body}`);
+        const { ok, status: unpublishStatus, payload } = await readDeployResponse(deployRes);
+        if (!ok && unpublishStatus !== 404) {
+          const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
+          console.error(`[delete-agent] unpublish returned ${unpublishStatus}: ${body}`);
           // Continue with DB delete even if unpublish partially fails
         }
       } catch (unpublishErr) {

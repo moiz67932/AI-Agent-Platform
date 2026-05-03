@@ -48,7 +48,11 @@ _NAME_STOPWORDS = {
     "looking", "trying", "wanted", "needed", "booked", "spoke",
     "called", "told", "said", "know", "think", "believe", "feel",
     # Spa/dental service words that aren't names
-    "hydra", "facial", "massage", "botox", "laser", "filler",
+    "hydra", "hydro", "facial", "hydrafacial", "massage", "botox",
+    "dysport", "xeomin", "laser", "filler", "sculptra", "kybella",
+    "microneedling", "micro", "needling", "threads", "thread", "pdo",
+    "prp", "prf", "dermaplaning", "peel", "restoration", "hair",
+    "whatsapp", "sms", "text", "email",
     "appointment", "service", "treatment",
 }
 
@@ -62,6 +66,7 @@ def _match_name_pattern(text: str) -> Optional[str]:
     if _NON_NAME_INTRO_RE.search(text.strip()):
         return None
     patterns = [
+        r"\b(?:change\s+my\s+name\s+to|update\s+my\s+name\s+to)\s+([A-Za-z][A-Za-z\s\.'-]{2,})",
         r"\b(?:my\s+name\s+is|i\s+am|i'm|this\s+is|call\s+me)\s+([A-Za-z][A-Za-z\s\.'-]{2,})",
         r"^(?:it'?s|its)\s+([A-Za-z][A-Za-z\s\.'-]{2,})",
     ]
@@ -148,7 +153,10 @@ SPA_SERVICE_MAP = {
     "lip flip": "Lip Flip",
     "kybella": "Kybella",
     "prp": "PRP Treatment",
+    "prf": "PRF Treatment",
     "sculptra": "Sculptra",
+    "pdo threads": "PDO Threads",
+    "pdo thread": "PDO Threads",
     # Laser & Energy Treatments
     "laser": "Laser Treatment",
     "ipl": "IPL Photofacial",
@@ -234,6 +242,8 @@ SPA_SERVICE_MAP = {
 # Phonetic approximation map for common STT errors on spa/dental services
 _STT_APPROXIMATIONS: dict[str, str] = {
     # HydraFacial variations
+    "hydro fisher": "HydraFacial",
+    "hydra fisher": "HydraFacial",
     "hydro fish": "HydraFacial",
     "hydro facial": "HydraFacial",
     "hydra fish": "HydraFacial",
@@ -241,9 +251,16 @@ _STT_APPROXIMATIONS: dict[str, str] = {
     "hydro face": "HydraFacial",
     "hydra": "HydraFacial",
     # Botox variations
+    "bot ticks": "Botox",
     "botoks": "Botox",
     "bo tox": "Botox",
     "bow tox": "Botox",
+    # Dysport variations
+    "disport": "Dysport",
+    "dys port": "Dysport",
+    # PDO threads
+    "p d o threads": "PDO Threads",
+    "pdo thread": "PDO Threads",
     # Microneedling
     "micro needling": "Microneedling",
     "micro needing": "Microneedling",

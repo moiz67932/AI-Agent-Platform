@@ -461,11 +461,19 @@ function Step5Agent() {
           <Label>Voice</Label>
           <div className="grid grid-cols-2 gap-2">
             {VOICES.map((voice) => (
-              <button
+              <div
                 key={voice.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => update('voice_id', voice.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    update('voice_id', voice.id);
+                  }
+                }}
                 className={cn(
-                  'flex items-center justify-between rounded-lg border p-3 text-left transition-all',
+                  'flex cursor-pointer items-center justify-between rounded-lg border p-3 text-left transition-all outline-none focus:ring-2 focus:ring-dash-blue focus:ring-offset-2 focus:ring-offset-dash-bg',
                   agent.voice_id === voice.id ? 'border-dash-blue bg-dash-blue-bg' : 'border-dash-border hover:border-dash-blue/50'
                 )}
               >
@@ -473,15 +481,15 @@ function Step5Agent() {
                   <div className="font-medium text-sm text-dash-t1">{voice.name}</div>
                   <div className="text-xs text-dash-t3">{voice.description}</div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  onClick={(e) => { e.stopPropagation(); }}
+                <span
+                  className={cn(
+                    'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dash-border bg-dash-surface text-dash-t3'
+                  )}
+                  aria-hidden="true"
                 >
                   <Play className="h-3 w-3" />
-                </Button>
-              </button>
+                </span>
+              </div>
             ))}
           </div>
 
@@ -628,19 +636,19 @@ function Step7Phone() {
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-extrabold text-dash-t1">Connect Your Phone Number</h2>
-        <p className="mt-1 text-dash-t3">Add a Twilio number for your AI agent</p>
+        <p className="mt-1 text-dash-t3">Add a Telnyx number for your AI agent</p>
       </div>
 
       <div className="rounded-lg border border-dash-border bg-dash-surface p-4 text-sm text-dash-t3 space-y-1.5">
         <p className="font-medium text-dash-t1">How phone numbers work</p>
-        <p>1. Purchase a number in your <span className="text-dash-blue">Twilio console</span></p>
-        <p>2. Point it at your LiveKit SIP trunk in Twilio's settings</p>
+        <p>1. Purchase a number in your <span className="text-dash-blue">Telnyx portal</span></p>
+        <p>2. Point it at your LiveKit SIP trunk in Telnyx settings</p>
         <p>3. Enter it below — your agent will receive calls on this number</p>
         <p className="pt-1 text-xs">You can skip this step and add a number later from the Phone Numbers page.</p>
       </div>
 
       <div className="space-y-1.5">
-        <Label>Twilio Phone Number</Label>
+        <Label>Phone Number</Label>
         <Input
           value={data.phone.number || ''}
           onChange={(e) => {

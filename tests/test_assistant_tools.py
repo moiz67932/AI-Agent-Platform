@@ -89,13 +89,13 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.duration_minutes, 60)
 
     def test_phone_confirmation_question_mentions_confirmations_and_reminders_for_caller_id(self) -> None:
-        state = PatientState(phone_source="sip")
+        state = PatientState(phone_source="sip", phone_last4="1234")
 
         question = _phone_confirmation_question(state, "+13105551234")
 
         self.assertEqual(
             question,
-            "Can I use the number you're calling from for your appointment confirmation and reminders?",
+            "Can I use the number ending in 1234 for your appointment confirmation and reminders?",
         )
 
     def test_phone_confirmation_question_for_spoken_number_avoids_repeating_digits(self) -> None:
@@ -116,6 +116,25 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
             "do not use" in slots_desc.lower() or "do not" in slots_desc.lower(),
             f"Expected slot search tool to discourage use when time given, got: {slots_desc!r}"
         )
+
+    async def test_update_patient_record_does_not_overwrite_name_with_service_phrase(self) -> None:
+        state = PatientState(full_name="Moiz")
+        state.last_user_text = "hydro fisher"
+        tools = AssistantTools(state, industry_type="med_spa")
+
+        await tools.update_patient_record(name="Hydro Fisher", reason="HydraFacial")
+
+        self.assertEqual(state.full_name, "Moiz")
+        self.assertEqual(state.reason, "HydraFacial")
+
+    async def test_update_patient_record_allows_explicit_name_change(self) -> None:
+        state = PatientState(full_name="Moiz")
+        state.last_user_text = "change my name to Sarah"
+        tools = AssistantTools(state, industry_type="med_spa")
+
+        await tools.update_patient_record(name="Sarah")
+
+        self.assertEqual(state.full_name, "Sarah")
 
     async def test_update_patient_record_date_only_requests_time(self) -> None:
         state = PatientState(reason="Cleaning", duration_minutes=30)
@@ -159,7 +178,7 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await tools.update_patient_record(time_suggestion="tomorrow at ten fifteen AM")
 
-        self.assertIn("Can I use the number you're calling from", result)
+        self.assertIn("Can I use the number ending in 1234", result)
         self.assertEqual(state.pending_confirm, "phone")
         self.assertTrue(state.slot_available)
         self.assertEqual(state.dt_local, parsed_dt)
@@ -292,6 +311,50 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.dt_local, parsed_dt)
         self.assertEqual(state.dt_local.hour, 9)
         self.assertIn("Friday at 9:00 AM", result)
+
+    async def test_noisy_time_only_follow_up_uses_saved_date_context(self) -> None:
+        state = PatientState(
+            full_name="Moiz",
+            reason="HydraFacial",
+            duration_minutes=60,
+            dt_text="Tuesday, May 05",
+            time_status="invalid",
+        )
+        tools = AssistantTools(
+            state,
+            clinic_info={"id": "clinic-123", "default_phone_region": "US"},
+            schedule={"working_hours": {}},
+        )
+        parsed_dt = datetime(2026, 5, 5, 14, 0, tzinfo=ZoneInfo("America/New_York"))
+
+        def _parse_side_effect(text: str, tz_hint: str | None = None):
+            normalized = " ".join(text.lower().split())
+            if "tuesday, may 05 at 2pm" in normalized:
+                return {"datetime": parsed_dt}
+            if normalized == "et 2pm":
+                return {"datetime": datetime(2026, 5, 2, 14, 0, tzinfo=ZoneInfo("America/New_York"))}
+            return {
+                "datetime": None,
+                "needs_clarification": False,
+                "clarification_type": "",
+                "message": "parse_failed",
+            }
+
+        with patch(
+            "tools.assistant_tools.parse_datetime_natural",
+            side_effect=_parse_side_effect,
+        ), patch(
+            "tools.assistant_tools.is_within_working_hours",
+            return_value=(True, None),
+        ), patch(
+            "tools.assistant_tools.is_slot_free_supabase",
+            new=AsyncMock(return_value=True),
+        ):
+            result = await tools.update_patient_record(time_suggestion="et 2pm")
+
+        self.assertEqual(state.dt_local, parsed_dt)
+        self.assertEqual(state.dt_local.date().isoformat(), "2026-05-05")
+        self.assertIn("Tuesday at 2:00 PM", result)
 
     async def test_time_parse_failure_preserves_known_date_and_reasks_time(self) -> None:
         state = PatientState(

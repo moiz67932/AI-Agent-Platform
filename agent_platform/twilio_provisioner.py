@@ -32,6 +32,39 @@ def _normalize_config_json(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _is_duplicate_livekit_resource_error(exc: Exception) -> bool:
+    """Return True when LiveKit rejected a create due to an existing equivalent resource."""
+    message = str(exc).lower()
+    return "already exists" in message or "duplicate" in message
+
+
+def _dispatch_rule_matches(
+    rule: Any,
+    *,
+    dispatch_name: str,
+    trunk_id: str,
+    agent_id: str,
+    phone_number: str,
+    known_dispatch_rule_id: str | None = None,
+) -> bool:
+    """Match a dispatch rule by stable routing identity, not only by name."""
+    rule_id = str(getattr(rule, "sip_dispatch_rule_id", "") or "")
+    if known_dispatch_rule_id and rule_id == known_dispatch_rule_id:
+        return True
+
+    if str(getattr(rule, "name", "") or "") == dispatch_name:
+        return True
+
+    trunk_ids = {str(item) for item in list(getattr(rule, "trunk_ids", []) or []) if item}
+    if trunk_id and trunk_id in trunk_ids:
+        return True
+
+    metadata = _normalize_config_json(getattr(rule, "metadata", None))
+    if str(metadata.get("agent_id") or "") == agent_id:
+        return True
+    return str(metadata.get("phone_number") or "") == phone_number and bool(trunk_ids)
+
+
 class TwilioProvisioner:
     """Provision Twilio numbers and bind them to LiveKit SIP dispatch rules."""
 
@@ -169,6 +202,8 @@ class TwilioProvisioner:
         agent_name: str,
         phone_number: str,
         prefer_existing: bool = False,
+        existing_trunk_id: str | None = None,
+        existing_dispatch_rule_id: str | None = None,
     ) -> dict[str, str]:
         """Create a LiveKit inbound trunk and SIP dispatch rule for the agent."""
         if not self.livekit_sip_host:
@@ -181,15 +216,89 @@ class TwilioProvisioner:
         trunk_numbers: list[str] = [phone_number]
         lkapi = self._create_livekit_api()
         try:
-            existing_trunk = None
-            if prefer_existing:
-                trunks = await lkapi.sip.list_inbound_trunk(
-                    api.ListSIPInboundTrunkRequest(numbers=[phone_number])
-                )
-                existing_trunk = next(
-                    (item for item in trunks.items if phone_number in list(item.numbers)),
+            dispatch_name = f"{agent_name}-dispatch"
+            trunk_name = f"{agent_name}-trunk"
+
+            async def find_existing_trunk(*, force_lookup: bool = False) -> Any | None:
+                if existing_trunk_id:
+                    try:
+                        trunks = await lkapi.sip.list_inbound_trunk(api.ListSIPInboundTrunkRequest())
+                        matched = next(
+                            (
+                                item
+                                for item in getattr(trunks, "items", [])
+                                if str(getattr(item, "sip_trunk_id", "") or "") == str(existing_trunk_id)
+                            ),
+                            None,
+                        )
+                        if matched is not None:
+                            return matched
+                    except Exception:
+                        logger.debug(
+                            "Unable to list LiveKit inbound trunks by id for agent=%s",
+                            agent_id,
+                            exc_info=True,
+                        )
+                if not force_lookup and not prefer_existing and not existing_trunk_id:
+                    return None
+                try:
+                    trunks = await lkapi.sip.list_inbound_trunk(
+                        api.ListSIPInboundTrunkRequest(numbers=[phone_number])
+                    )
+                    return next(
+                        (
+                            item
+                            for item in getattr(trunks, "items", [])
+                            if phone_number in list(getattr(item, "numbers", []) or [])
+                        ),
+                        None,
+                    )
+                except Exception:
+                    logger.debug(
+                        "Unable to list LiveKit inbound trunks by number for agent=%s number=%s",
+                        agent_id,
+                        phone_number,
+                        exc_info=True,
+                    )
+                    return None
+
+            async def find_existing_dispatch_rule(
+                trunk_id_to_match: str,
+                *,
+                force_lookup: bool = False,
+            ) -> Any | None:
+                if not force_lookup and not prefer_existing and not existing_dispatch_rule_id:
+                    return None
+                try:
+                    dispatch_rules = await lkapi.sip.list_dispatch_rule(
+                        api.ListSIPDispatchRuleRequest()
+                    )
+                except Exception:
+                    logger.debug(
+                        "Unable to list LiveKit dispatch rules for agent=%s",
+                        agent_id,
+                        exc_info=True,
+                    )
+                    return None
+
+                return next(
+                    (
+                        item
+                        for item in getattr(dispatch_rules, "items", [])
+                        if _dispatch_rule_matches(
+                            item,
+                            dispatch_name=dispatch_name,
+                            trunk_id=trunk_id_to_match,
+                            agent_id=agent_id,
+                            phone_number=phone_number,
+                            known_dispatch_rule_id=existing_dispatch_rule_id,
+                        )
+                    ),
                     None,
                 )
+
+            existing_trunk = None
+            existing_trunk = await find_existing_trunk()
 
             if existing_trunk is not None:
                 updated_trunk = await lkapi.sip.update_inbound_trunk_fields(
@@ -197,7 +306,7 @@ class TwilioProvisioner:
                     numbers=trunk_numbers,
                     auth_username=sip_auth_username,
                     auth_password=sip_auth_password,
-                    name=f"{agent_name}-trunk",
+                    name=trunk_name,
                 )
                 trunk_id = str(updated_trunk.sip_trunk_id)
                 logger.info(
@@ -207,17 +316,38 @@ class TwilioProvisioner:
                     phone_number,
                 )
             else:
-                trunk = await lkapi.sip.create_inbound_trunk(
-                    api.CreateSIPInboundTrunkRequest(
-                        trunk=api.SIPInboundTrunkInfo(
-                            name=f"{agent_name}-trunk",
-                            numbers=trunk_numbers,
-                            auth_username=sip_auth_username,
-                            auth_password=sip_auth_password,
+                try:
+                    trunk = await lkapi.sip.create_inbound_trunk(
+                        api.CreateSIPInboundTrunkRequest(
+                            trunk=api.SIPInboundTrunkInfo(
+                                name=trunk_name,
+                                numbers=trunk_numbers,
+                                auth_username=sip_auth_username,
+                                auth_password=sip_auth_password,
+                            )
                         )
                     )
-                )
-                trunk_id = str(getattr(trunk, "sip_trunk_id"))
+                    trunk_id = str(getattr(trunk, "sip_trunk_id"))
+                except Exception as exc:
+                    if not _is_duplicate_livekit_resource_error(exc):
+                        raise
+                    existing_trunk = await find_existing_trunk(force_lookup=True)
+                    if existing_trunk is None:
+                        raise
+                    updated_trunk = await lkapi.sip.update_inbound_trunk_fields(
+                        str(existing_trunk.sip_trunk_id),
+                        numbers=trunk_numbers,
+                        auth_username=sip_auth_username,
+                        auth_password=sip_auth_password,
+                        name=trunk_name,
+                    )
+                    trunk_id = str(updated_trunk.sip_trunk_id)
+                    logger.info(
+                        "Recovered duplicate LiveKit inbound trunk for agent=%s trunk=%s number=%s",
+                        agent_id,
+                        trunk_id,
+                        phone_number,
+                    )
 
             room_config = api.RoomConfiguration(
                 agents=[
@@ -243,26 +373,14 @@ class TwilioProvisioner:
             # number so LiveKit doesn't have to infer routing across unrelated trunks.
             dispatch_rule_trunk_ids: list[str] = [trunk_id]
 
-            existing_dispatch_rule = None
-            if prefer_existing:
-                dispatch_rules = await lkapi.sip.list_dispatch_rule(
-                    api.ListSIPDispatchRuleRequest()
-                )
-                existing_dispatch_rule = next(
-                    (
-                        item
-                        for item in dispatch_rules.items
-                        if str(item.name or "") == f"{agent_name}-dispatch"
-                    ),
-                    None,
-                )
+            existing_dispatch_rule = await find_existing_dispatch_rule(trunk_id)
 
             if existing_dispatch_rule is not None:
                 dispatch_rule = await lkapi.sip.update_dispatch_rule(
                         str(existing_dispatch_rule.sip_dispatch_rule_id),
                         api.SIPDispatchRuleInfo(
                             sip_dispatch_rule_id=str(existing_dispatch_rule.sip_dispatch_rule_id),
-                            name=f"{agent_name}-dispatch",
+                            name=dispatch_name,
                             trunk_ids=dispatch_rule_trunk_ids,
                             rule=rule,
                             hide_phone_number=bool(existing_dispatch_rule.hide_phone_number),
@@ -283,17 +401,51 @@ class TwilioProvisioner:
                     trunk_id,
                 )
             else:
-                dispatch_rule = await lkapi.sip.create_dispatch_rule(
-                    api.CreateSIPDispatchRuleRequest(
-                        dispatch_rule=api.SIPDispatchRuleInfo(
-                            name=f"{agent_name}-dispatch",
-                            trunk_ids=dispatch_rule_trunk_ids,
-                            rule=rule,
-                            room_config=room_config,
+                try:
+                    dispatch_rule = await lkapi.sip.create_dispatch_rule(
+                        api.CreateSIPDispatchRuleRequest(
+                            dispatch_rule=api.SIPDispatchRuleInfo(
+                                name=dispatch_name,
+                                trunk_ids=dispatch_rule_trunk_ids,
+                                rule=rule,
+                                room_config=room_config,
+                            )
                         )
                     )
-                )
-                dispatch_rule_id = str(getattr(dispatch_rule, "sip_dispatch_rule_id"))
+                    dispatch_rule_id = str(getattr(dispatch_rule, "sip_dispatch_rule_id"))
+                except Exception as exc:
+                    if not _is_duplicate_livekit_resource_error(exc):
+                        raise
+                    existing_dispatch_rule = await find_existing_dispatch_rule(
+                        trunk_id,
+                        force_lookup=True,
+                    )
+                    if existing_dispatch_rule is None:
+                        raise
+                    dispatch_rule = await lkapi.sip.update_dispatch_rule(
+                        str(existing_dispatch_rule.sip_dispatch_rule_id),
+                        api.SIPDispatchRuleInfo(
+                            sip_dispatch_rule_id=str(existing_dispatch_rule.sip_dispatch_rule_id),
+                            name=dispatch_name,
+                            trunk_ids=dispatch_rule_trunk_ids,
+                            rule=rule,
+                            hide_phone_number=bool(existing_dispatch_rule.hide_phone_number),
+                            inbound_numbers=list(existing_dispatch_rule.inbound_numbers),
+                            metadata=str(existing_dispatch_rule.metadata or ""),
+                            attributes=dict(existing_dispatch_rule.attributes),
+                            room_preset=str(existing_dispatch_rule.room_preset or ""),
+                            room_config=room_config,
+                            krisp_enabled=bool(existing_dispatch_rule.krisp_enabled),
+                            media_encryption=existing_dispatch_rule.media_encryption,
+                        ),
+                    )
+                    dispatch_rule_id = str(dispatch_rule.sip_dispatch_rule_id)
+                    logger.info(
+                        "Recovered duplicate LiveKit dispatch rule for agent=%s rule=%s trunk=%s",
+                        agent_id,
+                        dispatch_rule_id,
+                        trunk_id,
+                    )
         finally:
             await lkapi.aclose()
 
@@ -363,6 +515,8 @@ class TwilioProvisioner:
             # can preserve stale SIP auth/routing state across publishes and cause Twilio's
             # outbound SIP leg to fail even though the webhook itself is healthy.
             prefer_existing=False,
+            existing_trunk_id=str(agent.get("livekit_trunk_id") or "") or None,
+            existing_dispatch_rule_id=str(agent.get("livekit_dispatch_rule_id") or "") or None,
         )
 
         updated_agent = await update_agent_fields(

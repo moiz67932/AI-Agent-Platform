@@ -103,7 +103,6 @@ pip3 install --break-system-packages --quiet \
   fastapi \
   "uvicorn[standard]" \
   paramiko \
-  twilio \
   livekit-agents \
   "livekit-plugins-openai" \
   "livekit-plugins-deepgram" \

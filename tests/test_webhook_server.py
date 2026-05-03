@@ -1,49 +1,96 @@
 from __future__ import annotations
 
+import json
+
+from fastapi import HTTPException
+
 import webhook_server
 
 
-def test_build_twiml_sip_response_uses_explicit_project_sip_host(monkeypatch) -> None:
-    monkeypatch.setenv("LIVEKIT_SIP_HOST", "54zk61r57ks.sip.livekit.cloud")
-    monkeypatch.setenv("LIVEKIT_URL", "wss://sales-agent-fijyxxqg.livekit.cloud")
-    monkeypatch.setenv("SIP_AUTH_USERNAME", "sip-user")
-    monkeypatch.setenv("SIP_AUTH_PASSWORD", "sip-pass")
-    monkeypatch.setenv("WEBHOOK_BASE_URL", "http://178.104.70.97:8001")
+def _call_initiated_event() -> dict:
+    return {
+        "record_type": "event",
+        "event_type": "call.initiated",
+        "id": "evt-123",
+        "occurred_at": "2026-04-23T08:00:00.000000Z",
+        "payload": {
+            "call_control_id": "v3:call-control",
+            "call_leg_id": "leg-123",
+            "call_session_id": "session-123",
+            "from": "+12025550133",
+            "to": "+12025550131",
+            "direction": "incoming",
+            "state": "parked",
+        },
+    }
 
-    twiml = webhook_server._build_twiml_sip_response("+13103410536")
 
-    assert 'callerId="+13103410536"' in twiml
-    assert 'answerOnBridge="true"' in twiml
-    assert 'action="http://178.104.70.97:8001/twilio/dial-action"' in twiml
-    assert 'statusCallback="http://178.104.70.97:8001/twilio/sip-status"' in twiml
-    assert 'statusCallbackEvent="initiated ringing answered completed"' in twiml
-    assert 'sip:+13103410536@54zk61r57ks.sip.livekit.cloud;transport=tcp' in twiml
+def test_parse_event_accepts_telnyx_data_envelope() -> None:
+    event = _call_initiated_event()
+    body = json.dumps({"data": event, "meta": {"attempt": 1}}).encode()
+
+    envelope, data, call_payload, event_id, event_type = webhook_server._parse_event(body)
+
+    assert envelope["meta"]["attempt"] == 1
+    assert data == event
+    assert call_payload["call_control_id"] == "v3:call-control"
+    assert event_id == "evt-123"
+    assert event_type == "call.initiated"
 
 
-def test_build_twiml_sip_response_requires_webhook_base_url(monkeypatch) -> None:
-    monkeypatch.setenv("LIVEKIT_SIP_HOST", "54zk61r57ks.sip.livekit.cloud")
-    monkeypatch.setenv("SIP_AUTH_USERNAME", "sip-user")
-    monkeypatch.setenv("SIP_AUTH_PASSWORD", "sip-pass")
-    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+def test_parse_event_accepts_telnyx_voice_metadata_event_envelope() -> None:
+    event = _call_initiated_event()
+    body = json.dumps(
+        {
+            "call_leg_id": "leg-123",
+            "call_session_id": "session-123",
+            "event_timestamp": "2026-04-23T08:00:00.000000Z",
+            "metadata": {
+                "attempt": 1,
+                "event": event,
+                "status": "delivered",
+            },
+            "name": "call.initiated",
+        }
+    ).encode()
 
+    envelope, data, call_payload, event_id, event_type = webhook_server._parse_event(body)
+
+    assert envelope["metadata"]["attempt"] == 1
+    assert data == event
+    assert call_payload["call_control_id"] == "v3:call-control"
+    assert event_id == "evt-123"
+    assert event_type == "call.initiated"
+
+
+def test_parse_event_accepts_telnyx_v1_top_level_event_envelope() -> None:
+    event = _call_initiated_event()
+    body = json.dumps(event).encode()
+
+    envelope, data, call_payload, event_id, event_type = webhook_server._parse_event(body)
+
+    assert envelope == event
+    assert data == event
+    assert call_payload["call_control_id"] == "v3:call-control"
+    assert event_id == "evt-123"
+    assert event_type == "call.initiated"
+
+
+def test_parse_event_normalizes_telnyx_v1_underscore_event_names() -> None:
+    event = _call_initiated_event()
+    event["event_type"] = "call_initiated"
+    body = json.dumps(event).encode()
+
+    _, _, _, _, event_type = webhook_server._parse_event(body)
+
+    assert event_type == "call.initiated"
+
+
+def test_parse_event_rejects_non_telnyx_voice_payload() -> None:
     try:
-        webhook_server._build_twiml_sip_response("+13103410536")
-    except RuntimeError as exc:
-        assert "WEBHOOK_BASE_URL is required" in str(exc)
+        webhook_server._parse_event(b'{"data":{"event_type":"call.initiated"}}')
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "Telnyx webhook is missing payload"
     else:
-        raise AssertionError("Expected RuntimeError when WEBHOOK_BASE_URL is missing")
-
-
-def test_build_twiml_sip_response_does_not_guess_sip_host_from_livekit_url(monkeypatch) -> None:
-    monkeypatch.delenv("LIVEKIT_SIP_HOST", raising=False)
-    monkeypatch.setenv("LIVEKIT_URL", "wss://sales-agent-fijyxxqg.livekit.cloud")
-    monkeypatch.setenv("SIP_AUTH_USERNAME", "sip-user")
-    monkeypatch.setenv("SIP_AUTH_PASSWORD", "sip-pass")
-    monkeypatch.setenv("WEBHOOK_BASE_URL", "http://178.104.70.97:8001")
-
-    try:
-        webhook_server._build_twiml_sip_response("+13103410536")
-    except RuntimeError as exc:
-        assert "LIVEKIT_SIP_HOST" in str(exc)
-    else:
-        raise AssertionError("Expected RuntimeError when LIVEKIT_SIP_HOST is missing")
+        raise AssertionError("Expected malformed Telnyx event to fail")

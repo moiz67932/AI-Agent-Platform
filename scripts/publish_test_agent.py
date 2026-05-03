@@ -23,7 +23,7 @@ load_dotenv(ROOT / ".env.local")
 
 DEFAULT_PLATFORM_BASE_URL = "http://127.0.0.1:8000"
 PLATFORM_BASE_URL = str(os.getenv("PLATFORM_BASE_URL") or DEFAULT_PLATFORM_BASE_URL).rstrip("/")
-TEST_TWILIO_NUMBER = "+13103410536"
+TEST_PHONE_NUMBER = "+13103410536"
 
 
 def http_json(method: str, url: str, payload: dict | None = None, timeout: int = 10) -> dict:
@@ -84,10 +84,10 @@ async def find_existing_test_agents() -> list[str]:
             SELECT id
             FROM agents
             WHERE name = 'Test Agent'
-              AND config_json->>'twilio_existing_number' = $1
+                            AND config_json->>'existing_phone_number' = $1
             ORDER BY created_at DESC
             """,
-            TEST_TWILIO_NUMBER,
+                        TEST_PHONE_NUMBER,
         )
         return [str(row["id"]) for row in rows]
     finally:
@@ -122,14 +122,13 @@ async def create_or_reuse_test_agent(existing_agent_id: str | None = None) -> st
             "calendar_id": None,
             "industry_type": "dental",
             "greeting_text": "Hi, thanks for calling Test Business! How can I help?",
-            # Trial-account testing path: reuse the already-owned Twilio number +13103410536
+            # Testing path: reuse an already-owned number so this agent does not buy a new one.
             # so this test agent does not attempt to buy a new number.
             # Because this shared number and its LiveKit routing can only belong to one
             # test agent row at a time, this script reuses a single Test Agent record.
             # To move back to the normal production purchase flow later, remove the
-            # `twilio_existing_number` and `twilio_release_on_unpublish` keys below.
-            "twilio_existing_number": TEST_TWILIO_NUMBER,
-            "twilio_release_on_unpublish": False,
+            # `existing_phone_number` key below.
+            "existing_phone_number": TEST_PHONE_NUMBER,
         }
 
         if existing_agent_id:
@@ -143,7 +142,10 @@ async def create_or_reuse_test_agent(existing_agent_id: str | None = None) -> st
                     status = 'offline',
                     deploy_error = NULL,
                     phone_number = NULL,
-                    twilio_phone_sid = NULL,
+                    telephony_provider = 'telnyx',
+                    external_number_id = NULL,
+                    voice_connection_id = NULL,
+                    provider_config_json = '{}'::jsonb,
                     livekit_trunk_id = NULL,
                     livekit_dispatch_rule_id = NULL,
                     sip_auth_username = NULL,
@@ -224,7 +226,7 @@ def main() -> int:
 
     agent_id = asyncio.run(create_or_reuse_test_agent(existing_agent_id))
     print(f"Created test agent: {agent_id}")
-    print(f"Using existing Twilio test number: {TEST_TWILIO_NUMBER}")
+    print(f"Using existing test number: {TEST_PHONE_NUMBER}")
 
     try:
         publish_response = http_json(

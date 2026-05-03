@@ -20,14 +20,38 @@ NO_CONFIRM_RE = re.compile(
 )
 CALLER_ID_AFFIRM_RE = re.compile(
     r"\b("
-    r"use (?:the )?(?:same|this|that)? ?number|"
+    r"use (?:the )?(?:same|this|that|current|caller)? ?(?:phone|number)|"
+    r"use my phone|"
+    r"use this phone|"
+    r"this phone|"
     r"the one i(?: am|'m) calling from|"
-    r"number i(?: am|'m) calling from|"
+    r"(?:the )?number i(?: am|'m) calling from|"
+    r"(?:the )?number you(?: are|'re) calling from|"
+    r"(?:the )?number that i(?: am|'m) calling from|"
+    r"current number|"
+    r"caller number|"
+    r"caller id|"
+    r"my number|"
     r"this is the number|"
-    r"same number"
+    r"same number|"
+    r"this number"
     r")\b",
     re.IGNORECASE,
 )
+CALLER_ID_NEG_RE = re.compile(
+    r"\b("
+    r"use another number|"
+    r"use a different number|"
+    r"different number|"
+    r"another number|"
+    r"not this number|"
+    r"not the current number|"
+    r"i want to give (?:you )?another number|"
+    r"i(?:'d| would) rather give (?:you )?(?:another|a different) number"
+    r")\b",
+    re.IGNORECASE,
+)
+ENDING_DIGITS_RE = re.compile(r"\bending(?:\s+in|\s+with)?\s+(\d{1,4})\b", re.IGNORECASE)
 MONTH_NAME_RE = re.compile(
     r"\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b",
     re.IGNORECASE,
@@ -102,6 +126,10 @@ SMS_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+EMAIL_RE = re.compile(
+    r"\b(email|e-mail|send (?:it )?(?:by|to)? email|email me)\b",
+    re.IGNORECASE,
+)
 DELIVERY_DEFER_RE = re.compile(
     r"\b("
     r"either(?: one| is fine| works| will work)?|"
@@ -156,6 +184,13 @@ TIME_LEAD_IN_PREFIX_RE = re.compile(
     r"^(?:(?:at|around|about)\s+)+",
     re.IGNORECASE,
 )
+TIME_REPLY_PREFIX_RE = re.compile(
+    r"^(?:(?:let'?s\s+do\s+it|do\s+it|make\s+it|book\s+it|schedule\s+it|"
+    r"i'?ll\s+do|i\s+can\s+do|can\s+we\s+do|how\s+about|maybe|"
+    r"for|at|around|about|uh|um|er|hmm|ah|so|well|okay|ok|yeah|yes|"
+    r"yep|sure|please|it|et)\s+)+",
+    re.IGNORECASE,
+)
 DELIVERY_CONTEXT_RE = re.compile(
     r"\b(whats\s?app|sms|text|message|confirmation|confirm(?:ation)?|send)\b",
     re.IGNORECASE,
@@ -179,6 +214,7 @@ def sanitize_time_slot_text(text: Optional[str]) -> str:
     if not normalized:
         return ""
     normalized = HESITATION_PREFIX_RE.sub("", normalized).strip(" ,.;:!?-")
+    normalized = TIME_REPLY_PREFIX_RE.sub("", normalized).strip(" ,.;:!?-")
     normalized = TIME_LEAD_IN_PREFIX_RE.sub("", normalized).strip(" ,.;:!?-")
     return normalized
 
@@ -224,7 +260,11 @@ def ensure_caller_phone_pending(state: Any) -> Optional[str]:
     return phone_str
 
 
-def resolve_confirmation_intent(text: Optional[str]) -> Optional[bool]:
+def resolve_confirmation_intent(
+    text: Optional[str],
+    *,
+    caller_e164: Optional[str] = None,
+) -> Optional[bool]:
     """
     Return True for affirmative, False for negative, None for ambiguous.
 
@@ -237,6 +277,16 @@ def resolve_confirmation_intent(text: Optional[str]) -> Optional[bool]:
     normalized = re.sub(r"\s+", " ", str(text).strip().lower())
     if not normalized:
         return None
+
+    if CALLER_ID_NEG_RE.search(normalized):
+        return False
+
+    ending_match = ENDING_DIGITS_RE.search(normalized)
+    if ending_match and caller_e164:
+        caller_digits = re.sub(r"\D", "", str(caller_e164))
+        spoken_digits = ending_match.group(1)
+        if caller_digits.endswith(spoken_digits):
+            return True
 
     if CALLER_ID_AFFIRM_RE.search(normalized):
         return True
@@ -346,7 +396,7 @@ def build_time_parse_candidates(
 
     primary_score = time_expression_score(primary)
     recent_score = time_expression_score(recent)
-    if recent and recent_score > primary_score:
+    if recent and (not primary or recent_score > primary_score):
         candidates.append(recent)
 
     if primary:
@@ -354,9 +404,9 @@ def build_time_parse_candidates(
     if sanitized_primary and sanitized_primary != primary:
         candidates.append(sanitized_primary)
 
-    if recent:
+    if recent and not primary:
         candidates.append(recent)
-    if sanitized_recent and sanitized_recent != recent:
+    if sanitized_recent and sanitized_recent != recent and not primary:
         candidates.append(sanitized_recent)
 
     deduped: list[str] = []
@@ -382,6 +432,10 @@ def resolve_delivery_preference(text: Optional[str]) -> Optional[str]:
     normalized = re.sub(r"\s+", " ", str(text).strip().lower())
     if not normalized:
         return None
+
+    email_positions = [match.start() for match in EMAIL_RE.finditer(normalized)]
+    if email_positions:
+        return "email"
 
     sms_positions = [match.start() for match in SMS_RE.finditer(normalized)]
     whatsapp_positions = [match.start() for match in WHATSAPP_RE.finditer(normalized)]

@@ -21,9 +21,9 @@ interface Integration {
 
 const INTEGRATIONS: Integration[] = [
   {
-    id: 'twilio',
-    name: 'Twilio',
-    description: 'Phone number provisioning and SIP Trunk infrastructure',
+    id: 'telnyx',
+    name: 'Telnyx',
+    description: 'Phone number provisioning and voice infrastructure',
     status: 'connected',
     icon: <Phone className="h-5 w-5" />,
   },
@@ -47,22 +47,22 @@ const COMING_SOON = [
   'Google Calendar', 'Calendly', 'Zapier', 'Slack', 'HubSpot CRM', 'Stripe', 'Outlook', 'Salesforce',
 ];
 
-function TwilioConfig({ onClose }: { onClose: () => void }) {
-  const [accountSid, setAccountSid] = useState('');
-  const [authToken, setAuthToken] = useState('');
+function TelnyxConfig({ onClose }: { onClose: () => void }) {
+  const [apiKey, setApiKey] = useState('');
+  const [publicKey, setPublicKey] = useState('');
   const [testing, setTesting] = useState(false);
 
   const test = async () => {
-    if (!accountSid || !authToken) return;
+    if (!apiKey) return;
     setTesting(true);
     try {
-      await api.post('/api/integrations/twilio/test', {
-        account_sid: accountSid,
-        auth_token: authToken,
+      await api.post('/api/integrations/telnyx/test', {
+        api_key: apiKey,
+        public_key: publicKey || undefined,
       });
-      toast({ title: 'Twilio connection successful' });
+      toast({ title: 'Telnyx connection successful' });
     } catch {
-      toast({ title: 'Twilio connection failed', variant: 'destructive' });
+      toast({ title: 'Telnyx connection failed', variant: 'destructive' });
     } finally {
       setTesting(false);
     }
@@ -71,39 +71,38 @@ function TwilioConfig({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Configure Twilio</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Configure Telnyx</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Account SID</Label>
+            <Label>API Key</Label>
             <Input
-              value={accountSid}
-              onChange={(e) => setAccountSid(e.target.value)}
-              placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="KEYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Auth Token</Label>
+            <Label>Public Key <span className="text-dash-t3">(optional)</span></Label>
             <Input
-              type="password"
-              value={authToken}
-              onChange={(e) => setAuthToken(e.target.value)}
-              placeholder="your_auth_token"
+              value={publicKey}
+              onChange={(e) => setPublicKey(e.target.value)}
+              placeholder="hex-or-base64-public-key"
             />
           </div>
           <div className="rounded-lg border border-dash-border bg-dash-surface p-3 text-xs text-dash-t3">
             Find your credentials in the{' '}
             <a
-              href="https://console.twilio.com"
+              href="https://portal.telnyx.com"
               target="_blank"
               rel="noreferrer"
               className="text-dash-blue hover:underline inline-flex items-center gap-0.5"
             >
-              Twilio console <ExternalLink className="h-3 w-3" />
+              Telnyx portal <ExternalLink className="h-3 w-3" />
             </a>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={test} disabled={testing || !accountSid || !authToken}>
+          <Button variant="outline" onClick={test} disabled={testing || !apiKey}>
             {testing ? 'Testing...' : 'Test Connection'}
           </Button>
           <Button onClick={onClose}>Save</Button>
@@ -281,7 +280,7 @@ export default function Integrations() {
         </Card>
       </div>
 
-      {configuring === 'twilio' && <TwilioConfig onClose={() => setConfiguring(null)} />}
+      {configuring === 'telnyx' && <TelnyxConfig onClose={() => setConfiguring(null)} />}
       {configuring === 'webhooks' && <WebhookConfig onClose={() => setConfiguring(null)} />}
     </div>
   );

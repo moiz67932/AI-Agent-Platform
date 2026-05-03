@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
+from config import logger
 from models.state import PatientState
 from services.extraction_service import extract_name_quick, extract_reason_quick
 from utils.agent_flow import has_date_reference, has_time_reference, resolve_confirmation_intent
@@ -37,6 +38,8 @@ class ExpectedUserSlot(str, Enum):
     TIME = "time"
     DATE_TIME = "date_time"
     PHONE_CONFIRMATION = "phone_confirmation"
+    DELIVERY_PREFERENCE = "delivery_preference"
+    ANYTHING_ELSE = "anything_else"
     OTHER = "other"
 
 
@@ -118,7 +121,22 @@ REQUEST_LEAD_IN_RE = re.compile(
     re.IGNORECASE,
 )
 TRAILING_INCOMPLETE_RE = re.compile(
-    r"(?:\b(?:at|on|for|with|about|to|from|around|between|this|next|my)\b|[,:-])\s*$",
+    r"(?:\b(?:at|on|for|with|about|to|from|around|between|this|next|my|of|and|or)\b|[,:-])\s*$",
+    re.IGNORECASE,
+)
+INCOMPLETE_QUESTION_TAIL_RE = re.compile(
+    r"(?:"
+    r"\bcan you tell me(?:\s+(?:the\s+)?)?$|"
+    r"\bcan you tell me (?:the )?list of\s*$|"
+    r"\blist of\s*$|"
+    r"\bpricing of\s*$|"
+    r"\bprice of\s*$|"
+    r"\bdetails of\s*$|"
+    r"\bwhat are the\s*$|"
+    r"\bi wanted to know\s*$|"
+    r"\bi want to know\s*$|"
+    r"\b(?:for|about|of|and|or|with|to|from)\s*$"
+    r")",
     re.IGNORECASE,
 )
 BOOKING_INTENT_RE = re.compile(
@@ -211,8 +229,49 @@ def _normalize_text(text: Optional[str]) -> str:
     return " ".join((text or "").split()).strip()
 
 
+MEANINGFUL_SHORT_UTTERANCES = {
+    "yes", "yeah", "yep", "yup", "no", "nope", "ok", "okay", "sure",
+    "thanks", "thank you", "bye", "goodbye", "one", "two", "three",
+    "four", "five", "six", "seven", "eight", "nine", "ten", "sms",
+    "whatsapp", "text", "email",
+}
+
+
+def ignored_transcript_reason(
+    text: Optional[str],
+    *,
+    confidence: Optional[float] = None,
+) -> Optional[str]:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return "empty"
+    lower = normalized.lower()
+    if re.fullmatch(r"[\W_]+", normalized, flags=re.UNICODE):
+        return "punctuation_only"
+    if lower in MEANINGFUL_SHORT_UTTERANCES or re.fullmatch(r"\d{1,4}", lower):
+        return None
+    tokens = re.findall(r"[A-Za-z0-9]+", normalized)
+    if len(normalized) <= 1 and not tokens:
+        return "ultra_short"
+    if len(tokens) == 1 and len(tokens[0]) <= 1:
+        return "ultra_short"
+    if confidence is not None and confidence < 0.25 and len(tokens) <= 2:
+        return "low_confidence_short"
+    return None
+
+
 def _strip_terminal_punctuation(text: Optional[str]) -> str:
     return re.sub(r"[\s.,!?;:]+$", "", text or "").strip()
+
+
+def _has_explicit_name_intro(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:my\s+name\s+is|i\s+am|i'm|this\s+is|call\s+me|change\s+my\s+name\s+to|update\s+my\s+name\s+to)\s+",
+            text,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _extract_date_phrase(text: str) -> Optional[str]:
@@ -433,24 +492,52 @@ class StreamingTurnTracker:
             or (REQUEST_LEAD_IN_RE.search(normalized) and not extract_reason_quick(text, industry_type=self.industry_type))
             or SERVICE_REQUEST_RE.search(normalized)
         )
+        incomplete_question_tail = bool(INCOMPLETE_QUESTION_TAIL_RE.search(normalized))
         snap.syntactically_incomplete = bool(
             snap.self_introduction_in_progress
             or REQUEST_PREFIX_ONLY_RE.search(normalized)
             or TRAILING_INCOMPLETE_RE.search(normalized)
+            or incomplete_question_tail
             or normalized.endswith(("hello", "hi"))
         )
         snap.semantically_incomplete = bool(
             snap.request_phrase_in_progress
+            or incomplete_question_tail
             or (normalized.endswith("this is") or normalized.endswith("my name is"))
             or (has_date_reference(normalized) and normalized.endswith("at"))
         )
 
-        detected_name = extract_name_quick(text) or patient_state.full_name
+        current_turn_name = extract_name_quick(text)
+        current_turn_service = extract_reason_quick(text, industry_type=self.industry_type)
+        allow_current_name = bool(
+            current_turn_name
+            and (
+                self._expected_user_slot == ExpectedUserSlot.NAME
+                or _has_explicit_name_intro(text)
+                or (
+                    self._expected_user_slot is None
+                    and not current_turn_service
+                    and not patient_state.full_name
+                )
+            )
+        )
+        if (
+            current_turn_name
+            and not allow_current_name
+            and current_turn_service
+            and self._expected_user_slot == ExpectedUserSlot.SERVICE
+        ):
+            logger.info(
+                "[SLOT CONFLICT] rejected_name_candidate=%r service=%r expected_slot=service",
+                current_turn_name,
+                current_turn_service,
+            )
+        detected_name = current_turn_name if allow_current_name else patient_state.full_name
         if detected_name:
             snap.caller_name = _strip_terminal_punctuation(detected_name)
-            snap.caller_name_confidence = 0.95 if extract_name_quick(text) else 0.8
+            snap.caller_name_confidence = 0.95 if allow_current_name else 0.8
 
-        detected_service = extract_reason_quick(text, industry_type=self.industry_type) or patient_state.reason
+        detected_service = current_turn_service or patient_state.reason
         if detected_service:
             snap.service = detected_service
             snap.service_confidence = 0.92 if extract_reason_quick(text, industry_type=self.industry_type) else 0.8
@@ -548,6 +635,8 @@ class StreamingTurnTracker:
                 tokens = _token_count(normalized_text)
                 if tokens >= 1 and tokens <= 3 and not BOOKING_INTENT_RE.search(normalized_text.lower()):
                     has_explicit_name = True
+                    snap.caller_name = _strip_terminal_punctuation(normalized_text.title())
+                    snap.caller_name_confidence = max(snap.caller_name_confidence, 0.95)
             snap.expected_slot_status = "satisfied" if has_explicit_name else "unsatisfied"
             return
 
@@ -556,8 +645,15 @@ class StreamingTurnTracker:
             return
 
         if expected_slot == ExpectedUserSlot.PHONE_CONFIRMATION:
+            caller_phone = (
+                patient_state.phone_pending
+                or patient_state.detected_phone
+                or patient_state.phone_e164
+            )
             snap.expected_slot_status = (
-                "satisfied" if resolve_confirmation_intent(text) is not None else "unsatisfied"
+                "satisfied"
+                if resolve_confirmation_intent(text, caller_e164=caller_phone) is not None
+                else "unsatisfied"
             )
             return
 
@@ -851,8 +947,18 @@ def choose_contextual_filler(snapshot: TurnTrackerSnapshot) -> Optional[str]:
     if snapshot.intent == "clinic_info":
         _filler_text = snapshot.current_turn_accumulated_text or ""
         text = (snapshot.current_turn_accumulated_text or snapshot.latest_finalized_text or "").lower()
+        def _pick(options: list[str]) -> str:
+            if not options:
+                return "Yeah sure, let me find that for you."
+            seed = sum(ord(ch) for ch in (text or _filler_text))
+            return options[seed % len(options)]
+
         if re.search(r"\b(?:services|service list|list of services|what do you offer|what services do you offer)\b", text):
-            return "Sure, let me pull the services we offer for you."
+            return _pick([
+                "Yeah sure, let me find the services we offer.",
+                "Sure, let me pull the service list for you.",
+                "Absolutely, let me check the available services.",
+            ])
         service = (
             extract_reason_quick(_filler_text, industry_type="dental")
             or extract_reason_quick(_filler_text, industry_type="med_spa")
@@ -860,16 +966,40 @@ def choose_contextual_filler(snapshot: TurnTrackerSnapshot) -> Optional[str]:
             or ""
         ).strip()
         if service:
-            return f"Sure, let me pull the details on {service.lower()} for you."
+            return _pick([
+                f"Yeah sure, let me find that for {service.lower()}.",
+                f"Sure, let me pull the details on {service.lower()} for you.",
+                f"Of course, let me check {service.lower()} for you.",
+            ])
         if re.search(r"\b(doctor|dr\.?|dentist|provider|staff|team)\b", text):
-            return "Sure, let me pull the doctor details for you."
+            return _pick([
+                "Yeah sure, let me find those provider details.",
+                "Sure, let me pull the doctor details for you.",
+                "Of course, let me check the team details.",
+            ])
         if re.search(r"\b(price|prices|pricing|cost|costs|fee|fees|rate|rates)\b", text):
-            return "Sure, let me pull the pricing details for you."
+            return _pick([
+                "Yeah sure, let me find the pricing for you.",
+                "Sure, let me pull the pricing details.",
+                "Of course, let me check the cost for you.",
+            ])
         if re.search(r"\b(insurance|coverage|covered|accept|take)\b", text):
-            return "Sure, let me pull the insurance details for you."
+            return _pick([
+                "Yeah sure, let me find the insurance details.",
+                "Sure, let me check the coverage details for you.",
+                "Of course, let me pull the insurance information.",
+            ])
         if re.search(r"\b(location|address|parking|park|metro|station|transit)\b", text):
-            return "Sure, let me pull those location details for you."
-        return "Sure, let me pull those details for you."
+            return _pick([
+                "Yeah sure, let me find those location details.",
+                "Sure, let me pull the address and parking details.",
+                "Of course, let me check those location details.",
+            ])
+        return _pick([
+            "Yeah sure, let me find that for you.",
+            "Sure, let me pull those details for you.",
+            "Of course, let me check that for you.",
+        ])
     if snapshot.intent in {"appointment_lookup", "reschedule", "cancellation"}:
         return "Let me check that for you."
     if snapshot.intent == "general_inquiry":

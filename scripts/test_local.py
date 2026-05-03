@@ -32,15 +32,13 @@ REQUIRED_ENV_VARS = [
     "LIVEKIT_URL",
     "LIVEKIT_API_KEY",
     "LIVEKIT_API_SECRET",
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_AUTH_TOKEN",
+    "TELNYX_API_KEY",
     "OPENAI_API_KEY",
 ]
 
 IMPORT_CHECKS = [
     ("asyncpg", "import asyncpg"),
     ("paramiko", "import paramiko"),
-    ("twilio.rest.Client", "from twilio.rest import Client"),
     ("database.db.init_pool", "from database.db import init_pool"),
     ("agent_platform.utils.generate_subdomain", "from agent_platform.utils import generate_subdomain"),
     (
@@ -48,8 +46,8 @@ IMPORT_CHECKS = [
         "from agent_platform.server_manager import AgentServerManager",
     ),
     (
-        "agent_platform.twilio_provisioner.TwilioProvisioner",
-        "from agent_platform.twilio_provisioner import TwilioProvisioner",
+        "agent_platform.telnyx_provisioner.TelnyxProvisioner",
+        "from agent_platform.telnyx_provisioner import TelnyxProvisioner",
     ),
     ("webhook_server.app", "from webhook_server import app"),
     ("post_call_pipeline.post_call_pipeline", "from post_call_pipeline import post_call_pipeline"),
@@ -258,7 +256,7 @@ def test_ngrok_status() -> bool:
         return False
 
     print("PASS")
-    print(f"Twilio webhook base: {public_url}")
+    print(f"Public webhook base: {public_url}")
     return True
 
 

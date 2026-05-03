@@ -8,17 +8,6 @@ Contains business logic services for:
 - Appointment management
 """
 
-from .database_service import (
-    fetch_clinic_context_optimized,
-    is_slot_free_supabase,
-    book_to_supabase,
-)
-from .extraction_service import (
-    extract_name_quick,
-    extract_reason_quick,
-    _iso,
-)
-
 __all__ = [
     "fetch_clinic_context_optimized",
     "is_slot_free_supabase",
@@ -27,3 +16,20 @@ __all__ = [
     "extract_reason_quick",
     "_iso",
 ]
+
+
+def __getattr__(name: str):
+    """Lazily expose common service helpers without importing every integration."""
+    if name in {
+        "fetch_clinic_context_optimized",
+        "is_slot_free_supabase",
+        "book_to_supabase",
+    }:
+        from . import database_service
+
+        return getattr(database_service, name)
+    if name in {"extract_name_quick", "extract_reason_quick", "_iso"}:
+        from . import extraction_service
+
+        return getattr(extraction_service, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

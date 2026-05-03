@@ -78,7 +78,7 @@ function AddNumberDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add Twilio Number</DialogTitle>
+          <DialogTitle>Add Telnyx Number</DialogTitle>
           <DialogDescription>
             Search for an available number to purchase, or enter one you already own.
           </DialogDescription>
@@ -139,7 +139,7 @@ function AddNumberDialog({ onClose }: { onClose: () => void }) {
 
               {!searching && searchResults.length === 0 && (
                 <p className="text-xs text-dash-t3 text-center py-2">
-                  Search to see available numbers from Twilio
+                  Search to see available numbers from Telnyx
                 </p>
               )}
             </>
@@ -158,8 +158,8 @@ function AddNumberDialog({ onClose }: { onClose: () => void }) {
               <div className="rounded-lg border border-dash-border bg-dash-surface p-3 text-xs text-dash-t3 space-y-1 mt-2">
                 <p className="font-medium text-dash-t1">Setup checklist</p>
                 <p>1. Buy a number in your{' '}
-                  <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="text-dash-blue hover:underline inline-flex items-center gap-0.5">
-                    Twilio console <ExternalLink className="h-3 w-3" />
+                  <a href="https://portal.telnyx.com" target="_blank" rel="noreferrer" className="text-dash-blue hover:underline inline-flex items-center gap-0.5">
+                    Telnyx portal <ExternalLink className="h-3 w-3" />
                   </a>
                 </p>
                 <p>2. Configure it to point to your LiveKit SIP Trunk</p>
@@ -244,7 +244,7 @@ export default function PhoneNumbers() {
   const [assignTarget, setAssignTarget] = useState<{ id: string; agentId?: string } | null>(null);
 
   const release = async (id: string) => {
-    if (!confirm('Remove this number from Foyer? It will also be released from your Twilio account.')) return;
+    if (!confirm('Remove this number from Foyer? It will also be released from your Telnyx account.')) return;
     await releaseNumber.mutateAsync(id);
   };
 
@@ -253,7 +253,7 @@ export default function PhoneNumbers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-extrabold text-dash-t1">Phone Numbers</h1>
-          <p className="text-sm text-dash-t3 mt-0.5">Twilio numbers connected to your LiveKit SIP Trunk</p>
+          <p className="text-sm text-dash-t3 mt-0.5">Telnyx numbers connected to your LiveKit SIP Trunk</p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-2" />Add Number
@@ -265,8 +265,8 @@ export default function PhoneNumbers() {
         <Phone className="h-4 w-4 mt-0.5 shrink-0 text-dash-blue" />
         <span>
           Phone numbers are purchased via{' '}
-          <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="text-dash-blue hover:underline inline-flex items-center gap-0.5">
-            Twilio <ExternalLink className="h-3 w-3" />
+          <a href="https://portal.telnyx.com" target="_blank" rel="noreferrer" className="text-dash-blue hover:underline inline-flex items-center gap-0.5">
+            Telnyx <ExternalLink className="h-3 w-3" />
           </a>
           {' '}and routed through your LiveKit SIP Trunk. Add them here to assign them to agents and track call activity.
         </span>
@@ -295,7 +295,7 @@ export default function PhoneNumbers() {
                     <EmptyState
                       icon={Phone}
                       title="No phone numbers"
-                      description="Add a Twilio number to start receiving AI-powered calls"
+                      description="Add a Telnyx number to start receiving AI-powered calls"
                       actionLabel="Add Number"
                       onAction={() => setShowAdd(true)}
                     />

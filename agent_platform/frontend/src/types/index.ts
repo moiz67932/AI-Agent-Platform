@@ -67,7 +67,7 @@ export interface Agent {
   port?: number | null;
   subdomain?: string | null;
   phone_number?: PhoneNumber | null;
-  twilio_phone_sid?: string | null;
+  external_number_id?: string | null;
   deploy_error?: string | null;
   deploy_progress?: number | null;
   hetzner_server_ip?: string | null;

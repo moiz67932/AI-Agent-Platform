@@ -299,9 +299,9 @@ def parse_datetime_natural(spoken: str, tz_hint: str | None = None) -> Dict[str,
         # IMPORTANT: Require either "at" prefix, colon for minutes, or am/pm suffix
         # to avoid matching day numbers like "6th" in "february 6th"
         numeric_time_pattern = re.compile(
-            r'(?:at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?'  # "at 10 am" pattern (requires "at")
+            r'(?:at\s+(\d{1,2})(?!\d|\s*(?:st|nd|rd|th)\b)(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?'  # "at 10 am" pattern (requires "at")
             r'|(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?'              # "3:30 pm" pattern (requires colon)
-            r'|(\d{1,2})\s+(am|pm|a\.m\.|p\.m\.))',                     # "2pm" pattern (requires am/pm)
+            r'|(\d{1,2})(?!\d|\s*(?:st|nd|rd|th)\b)\s*(am|pm|a\.m\.|p\.m\.))',                     # "2pm" pattern (requires am/pm)
             re.IGNORECASE
         )
         numeric_match = numeric_time_pattern.search(spoken_clean)

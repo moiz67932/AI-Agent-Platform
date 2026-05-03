@@ -65,6 +65,21 @@ class TimeParsingTests(unittest.TestCase):
         self.assertEqual(result["datetime"].date().isoformat(), "2026-03-10")
         self.assertEqual(result["datetime"].hour, 14)
 
+    @mock.patch("utils.contact_utils.datetime", _FixedDateTime)
+    def test_parse_ordinal_date_with_at_does_not_infer_time_from_day_number(self) -> None:
+        result = parse_datetime_natural("Let's do it at 10th of March", tz_hint="America/New_York")
+
+        self.assertTrue(result["date_only"])
+        self.assertEqual(result["parsed_date"].isoformat(), "2026-03-10")
+
+    def test_noisy_time_fragment_is_sanitized_before_combining_with_saved_date(self) -> None:
+        candidates = build_time_parse_candidates(
+            "et 2pm",
+            previous_text="Tuesday, May 05",
+        )
+
+        self.assertEqual(candidates[0], "Tuesday, May 05 at 2pm")
+
 
 if __name__ == "__main__":
     unittest.main()

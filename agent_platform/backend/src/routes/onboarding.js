@@ -70,7 +70,7 @@ router.post('/complete', async (req, res, next) => {
         status: 'offline',
         default_language: agentConfig.language || 'en',
         config_json: {
-          twilio_existing_number: phoneNumber?.number
+          existing_phone_number: phoneNumber?.number
             ? (() => {
                 const digits = (phoneNumber.number || '').replace(/\D/g, '');
                 if (digits.length === 10) return `+1${digits}`;
@@ -78,7 +78,6 @@ router.post('/complete', async (req, res, next) => {
                 return digits.length > 0 ? `+${digits}` : null;
               })()
             : null,
-          twilio_release_on_unpublish: false,
         },
       })
       .select()

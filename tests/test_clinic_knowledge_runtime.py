@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from models.state import PatientState
 from tools.assistant_tools import AssistantTools
@@ -186,6 +187,107 @@ class ClinicKnowledgeRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Amex only", answer_a)
         self.assertIn("Amex only", answer_b)
         self.assertNotIn("Visa", answer_b)
+
+    async def test_unclear_query_with_active_service_clarifies_instead_of_random_answer(self) -> None:
+        state = PatientState(reason="HydraFacial")
+        state.remember_user_text("What type of guy?")
+        tools = AssistantTools(
+            state,
+            clinic_info={"id": "clinic-medspa", "organization_id": "org-medspa", "name": "Demo Med Spa"},
+            settings={
+                "organization_id": "org-medspa",
+                "config_json": {
+                    "industry_type": "med_spa",
+                    "services": [
+                        {"name": "HydraFacial", "enabled": True},
+                        {"name": "Derive Hair Restoration", "enabled": True},
+                    ],
+                },
+            },
+            knowledge_articles=[
+                {
+                    "title": "Derive Hair Restoration",
+                    "body": "Derive Hair Restoration supports scalp health.",
+                    "category": "Services",
+                }
+            ],
+            industry_type="med_spa",
+        )
+
+        result = await tools.search_clinic_info("What type of guy?")
+
+        self.assertIn("HydraFacial", result)
+        self.assertIn("another treatment", result)
+        self.assertNotIn("Hair Restoration supports scalp health", result)
+
+    async def test_service_list_avoids_generic_taxonomy_labels_for_med_spa(self) -> None:
+        tools = AssistantTools(
+            PatientState(),
+            clinic_info={"id": "clinic-medspa", "organization_id": "org-medspa", "name": "Demo Med Spa"},
+            settings={
+                "organization_id": "org-medspa",
+                "config_json": {
+                    "industry_type": "med_spa",
+                    "services": [
+                        {"name": "Cosmetic", "enabled": True},
+                        {"name": "Implant", "enabled": True},
+                    ],
+                },
+            },
+            industry_type="med_spa",
+        )
+
+        result = await tools.search_clinic_info("What services do you offer?")
+
+        self.assertNotIn("Cosmetic, and Implant", result)
+        self.assertIn("facial treatments", result)
+
+    async def test_no_spoken_source_label_in_clinic_answer(self) -> None:
+        tools = _build_tools(
+            knowledge_articles=[
+                {
+                    "title": "Payment",
+                    "body": "Source: website. We accept Visa and Amex.",
+                    "category": "Payment",
+                }
+            ]
+        )
+
+        result = await tools.search_clinic_info("What payment methods do you accept?")
+
+        self.assertNotIn("Source:", result)
+
+    async def test_synthetic_service_id_is_not_sent_to_uuid_rpc_filter(self) -> None:
+        state = PatientState()
+        tools = AssistantTools(
+            state,
+            clinic_info={
+                "id": "11111111-1111-1111-1111-111111111111",
+                "organization_id": "22222222-2222-2222-2222-222222222222",
+                "name": "Demo Med Spa",
+            },
+            settings={
+                "organization_id": "22222222-2222-2222-2222-222222222222",
+                "config_json": {"industry_type": "med_spa", "services": []},
+            },
+            knowledge_articles=[],
+            industry_type="med_spa",
+        )
+
+        async def _fake_rpc(*args, **kwargs):
+            self.assertIsNone(kwargs.get("service_id"))
+            return []
+
+        with patch(
+            "services.clinic_knowledge_service._run_hybrid_search_rpc",
+            new=AsyncMock(side_effect=_fake_rpc),
+        ), patch(
+            "services.clinic_knowledge_service.get_query_embedding",
+            new=AsyncMock(return_value=[0.1, 0.2]),
+        ):
+            result = await tools.search_clinic_info("What is the price of HydraFacial?")
+
+        self.assertIn("don't have", result.lower())
 
 
 if __name__ == "__main__":

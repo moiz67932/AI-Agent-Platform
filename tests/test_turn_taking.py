@@ -12,6 +12,7 @@ from utils.turn_taking import (
     build_policy_decision,
     format_policy_log,
     format_tracker_log,
+    ignored_transcript_reason,
     preview_turn,
 )
 
@@ -138,7 +139,56 @@ class TurnTakingPolicyTests(unittest.TestCase):
 
         self.assertEqual(snapshot.intent, "clinic_info")
         self.assertEqual(decision.action, PolicyAction.FAST_PATH)
-        self.assertEqual(decision.filler_text, "Sure, let me pull the services we offer for you.")
+        self.assertIn(
+            decision.filler_text,
+            {
+                "Yeah sure, let me find the services we offer.",
+                "Sure, let me pull the service list for you.",
+                "Absolutely, let me check the available services.",
+            },
+        )
+        self.assertNotIn("teeth whitening", (decision.filler_text or "").lower())
+
+    def test_punctuation_only_startup_noise_is_ignored(self) -> None:
+        self.assertEqual(ignored_transcript_reason("."), "punctuation_only")
+        self.assertEqual(ignored_transcript_reason(""), "empty")
+        self.assertIsNone(ignored_transcript_reason("yes"))
+        self.assertIsNone(ignored_transcript_reason("WhatsApp"))
+
+    def test_incomplete_service_list_question_waits_without_filler(self) -> None:
+        snapshot, decision = preview_turn(
+            "Can you tell me the list of",
+            patient_state=PatientState(),
+            config=self.config,
+        )
+
+        self.assertEqual(snapshot.completion_label, CompletionLabel.LIKELY_CONTINUING)
+        self.assertEqual(decision.action, PolicyAction.WAIT)
+        self.assertIsNone(decision.filler_text)
+
+    def test_complete_service_list_question_answers_after_completion(self) -> None:
+        snapshot, decision = preview_turn(
+            "Can you tell me the list of services that you provide",
+            patient_state=PatientState(),
+            config=self.config,
+        )
+
+        self.assertEqual(snapshot.intent, "clinic_info")
+        self.assertEqual(decision.action, PolicyAction.FAST_PATH)
+        self.assertEqual(decision.deterministic_route, "clinic_info.answer")
+
+    def test_expected_service_slot_rejects_service_phrase_as_name(self) -> None:
+        state = PatientState(full_name="Moiz")
+        snapshot, decision = preview_turn(
+            "hydro fisher",
+            patient_state=state,
+            expected_user_slot=ExpectedUserSlot.SERVICE.value,
+            config=self.config,
+        )
+
+        self.assertEqual(snapshot.service, "HydraFacial")
+        self.assertEqual(snapshot.caller_name, "Moiz")
+        self.assertEqual(decision.deterministic_route, "booking.ask_date_time")
 
     def test_pricing_fragment_routes_to_clinic_info_answer(self) -> None:
         state = PatientState(reason="Teeth whitening")

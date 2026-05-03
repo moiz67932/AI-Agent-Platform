@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import json
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator
@@ -21,6 +22,57 @@ if TYPE_CHECKING:
 DatabaseRecord = dict[str, Any]
 
 _POOL: Any | None = None
+_JSON_COLUMNS_BY_TABLE: dict[str, set[str]] = {
+    "agents": {"config_json", "provider_config_json"},
+    "phone_numbers": {"provider_config_json"},
+    "telephony_webhook_events": {"payload"},
+}
+
+
+def _translate_schema_error(exc: Exception) -> Exception:
+    """Add a more actionable hint when the database schema is older than the code."""
+    message = str(exc)
+    lowered = message.lower()
+    if "column" in lowered and "does not exist" in lowered:
+        return RuntimeError(
+            f"{message}. Your Supabase schema is older than this codebase. "
+            "Run the SQL in `migrations/005_add_telnyx_telephony_columns.sql` "
+            "or apply the latest `database/schema.sql` updates, then retry the deploy."
+        )
+    if "there is no unique or exclusion constraint matching the on conflict specification" in lowered:
+        return RuntimeError(
+            f"{message}. Your Supabase `phone_numbers` table is missing the unique index "
+            "required for `ON CONFLICT (phone_e164)`. Run the latest "
+            "`migrations/005_add_telnyx_telephony_columns.sql` and make sure it creates "
+            "`idx_phone_numbers_phone_e164_unique`, then retry the deploy."
+        )
+    if "invalid input for query argument" in lowered and "expected str, got dict" in lowered:
+        return RuntimeError(
+            f"{message}. The app tried to send JSON config into a SQL text parameter. "
+            "Update to the latest code for the DB serialization fixes, then retry the deploy."
+        )
+    return exc
+
+
+def _build_update_parts(
+    table_name: str,
+    fields: dict[str, Any],
+    *,
+    start_index: int = 2,
+) -> tuple[list[str], list[Any]]:
+    """Build SQL update assignments and params with JSON columns safely cast."""
+    json_columns = _JSON_COLUMNS_BY_TABLE.get(table_name, set())
+    assignments: list[str] = []
+    params: list[Any] = []
+
+    for index, (column, value) in enumerate(fields.items(), start=start_index):
+        if column in json_columns:
+            assignments.append(f"{column} = ${index}::jsonb")
+            params.append(json.dumps(value if value is not None else {}))
+        else:
+            assignments.append(f"{column} = ${index}")
+            params.append(value)
+    return assignments, params
 
 
 def _require_asyncpg() -> Any:
@@ -237,19 +289,127 @@ async def update_agent_fields(
     if not fields:
         raise ValueError("fields must not be empty")
 
-    assignments = [f"{column} = ${index}" for index, column in enumerate(fields.keys(), start=2)]
+    assignments, serialized_params = _build_update_parts("agents", fields, start_index=2)
     query = (
         "UPDATE agents SET "
         + ", ".join(assignments)
         + ", updated_at = NOW() "
         + "WHERE id = $1 RETURNING *"
     )
-    params = [agent_id, *fields.values()]
+    params = [agent_id, *serialized_params]
 
     async def _run(conn: asyncpg.Connection) -> DatabaseRecord:
-        row = await conn.fetchrow(query, *params)
+        try:
+            row = await conn.fetchrow(query, *params)
+        except Exception as exc:
+            raise _translate_schema_error(exc) from exc
         if row is None:
             raise LookupError(f"Agent {agent_id} was not found")
+        return dict(row)
+
+    if connection is not None:
+        return await _run(connection)
+
+    pool = get_db_pool()
+    async with pool.acquire() as conn:
+        return await _run(conn)
+
+
+async def get_agent_phone_number_assignment(
+    agent_id: str,
+    *,
+    connection: asyncpg.Connection | None = None,
+) -> DatabaseRecord | None:
+    """Fetch the most recent active phone number assigned to an agent."""
+
+    query = """
+        SELECT *
+        FROM phone_numbers
+        WHERE agent_id = $1
+        ORDER BY created_at DESC NULLS LAST, id DESC
+        LIMIT 1
+    """
+    if connection is not None:
+        return _record(await connection.fetchrow(query, agent_id))
+
+    pool = get_db_pool()
+    async with pool.acquire() as conn:
+        return _record(await conn.fetchrow(query, agent_id))
+
+
+async def upsert_phone_number_assignment(
+    *,
+    organization_id: str | None,
+    clinic_id: str | None,
+    agent_id: str | None,
+    phone_number: str,
+    external_number_id: str | None,
+    voice_connection_id: str | None,
+    telephony_provider: str = "telnyx",
+    provider_config_json: dict[str, Any] | None = None,
+    label: str | None = None,
+    status: str = "active",
+    monthly_cost: float = 0,
+    connection: asyncpg.Connection | None = None,
+) -> DatabaseRecord:
+    """Insert or update the provider metadata for a phone number record."""
+
+    provider_json = json.dumps(provider_config_json or {})
+    query = """
+        INSERT INTO phone_numbers (
+            organization_id,
+            clinic_id,
+            agent_id,
+            phone_number,
+            phone_e164,
+            label,
+            status,
+            monthly_cost,
+            telephony_provider,
+            external_number_id,
+            voice_connection_id,
+            provider_config_json
+        )
+        VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+        ON CONFLICT (phone_e164)
+        DO UPDATE SET
+            organization_id = COALESCE(EXCLUDED.organization_id, phone_numbers.organization_id),
+            clinic_id = COALESCE(EXCLUDED.clinic_id, phone_numbers.clinic_id),
+            agent_id = COALESCE(EXCLUDED.agent_id, phone_numbers.agent_id),
+            phone_number = EXCLUDED.phone_number,
+            label = COALESCE(EXCLUDED.label, phone_numbers.label),
+            status = EXCLUDED.status,
+            monthly_cost = EXCLUDED.monthly_cost,
+            telephony_provider = EXCLUDED.telephony_provider,
+            external_number_id = COALESCE(EXCLUDED.external_number_id, phone_numbers.external_number_id),
+            voice_connection_id = COALESCE(EXCLUDED.voice_connection_id, phone_numbers.voice_connection_id),
+            provider_config_json = CASE
+                WHEN EXCLUDED.provider_config_json::text = '{}' THEN phone_numbers.provider_config_json
+                ELSE EXCLUDED.provider_config_json
+            END
+        RETURNING *
+    """
+    params = (
+        organization_id,
+        clinic_id,
+        agent_id,
+        phone_number,
+        label,
+        status,
+        monthly_cost,
+        telephony_provider,
+        external_number_id,
+        voice_connection_id,
+        provider_json,
+    )
+
+    async def _run(conn: asyncpg.Connection) -> DatabaseRecord:
+        try:
+            row = await conn.fetchrow(query, *params)
+        except Exception as exc:
+            raise _translate_schema_error(exc) from exc
+        if row is None:
+            raise RuntimeError(f"Failed to upsert phone number assignment for {phone_number}")
         return dict(row)
 
     if connection is not None:
@@ -333,7 +493,10 @@ async def create_call_log(
     agent_id: str,
     clinic_id: str | None,
     organization_id: str | None,
-    twilio_call_sid: str | None,
+    provider_call_id: str | None,
+    provider_call_leg_id: str | None,
+    provider_call_session_id: str | None,
+    telephony_provider: str = "telnyx",
     livekit_room: str | None,
     caller_phone: str | None,
     status: str = "initiated",
@@ -346,7 +509,10 @@ async def create_call_log(
         agent_id: Owning agent UUID.
         clinic_id: Clinic UUID if known.
         organization_id: Organization UUID if known.
-        twilio_call_sid: Twilio Call SID.
+        provider_call_id: Provider call identifier used for future updates.
+        provider_call_leg_id: Provider call leg identifier.
+        provider_call_session_id: Provider call session identifier.
+        telephony_provider: Telephony provider name.
         livekit_room: LiveKit room name.
         caller_phone: Caller phone number.
         status: Initial call status.
@@ -359,16 +525,29 @@ async def create_call_log(
         row = await conn.fetchrow(
             """
             INSERT INTO call_logs (
-                agent_id, clinic_id, organization_id, twilio_call_sid, livekit_room,
-                caller_phone, status, transcript_text, summary
+                agent_id,
+                clinic_id,
+                organization_id,
+                telephony_provider,
+                provider_call_id,
+                provider_call_leg_id,
+                provider_call_session_id,
+                livekit_room,
+                caller_phone,
+                status,
+                transcript_text,
+                summary
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING *
             """,
             agent_id,
             clinic_id,
             organization_id,
-            twilio_call_sid,
+            telephony_provider,
+            provider_call_id,
+            provider_call_leg_id,
+            provider_call_session_id,
             livekit_room,
             caller_phone,
             status,
@@ -378,11 +557,11 @@ async def create_call_log(
         return dict(row)
 
 
-async def get_call_log_by_sid(twilio_call_sid: str) -> DatabaseRecord | None:
-    """Fetch a call log by Twilio Call SID.
+async def get_call_log_by_provider_call_id(provider_call_id: str) -> DatabaseRecord | None:
+    """Fetch a call log by provider call identifier.
 
     Params:
-        twilio_call_sid: Twilio Call SID.
+        provider_call_id: Telephony provider call identifier.
     Returns:
         Matching call log row or `None`.
     """
@@ -390,10 +569,61 @@ async def get_call_log_by_sid(twilio_call_sid: str) -> DatabaseRecord | None:
     async with pool.acquire() as conn:
         return _record(
             await conn.fetchrow(
-                "SELECT * FROM call_logs WHERE twilio_call_sid = $1",
-                twilio_call_sid,
+                "SELECT * FROM call_logs WHERE provider_call_id = $1",
+                provider_call_id,
             )
         )
+
+
+async def get_call_log_by_sid(provider_call_id: str) -> DatabaseRecord | None:
+    """Backward-compatible alias for older call sites that still use the Twilio-era name."""
+    return await get_call_log_by_provider_call_id(provider_call_id)
+
+
+async def record_telephony_webhook_event(
+    *,
+    event_id: str,
+    telephony_provider: str,
+    agent_id: str | None,
+    provider_call_id: str | None,
+    event_type: str,
+    payload: dict[str, Any],
+    connection: asyncpg.Connection | None = None,
+) -> bool:
+    """Persist a provider webhook event and return whether it was newly inserted."""
+
+    query = """
+        INSERT INTO telephony_webhook_events (
+            event_id,
+            telephony_provider,
+            agent_id,
+            provider_call_id,
+            event_type,
+            payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING event_id
+    """
+    params = (
+        event_id,
+        telephony_provider,
+        agent_id,
+        provider_call_id,
+        event_type,
+        json.dumps(payload),
+    )
+
+    async def _run(conn: asyncpg.Connection) -> bool:
+        row = await conn.fetchrow(query, *params)
+        return row is not None
+
+    if connection is not None:
+        return await _run(connection)
+
+    pool = get_db_pool()
+    async with pool.acquire() as conn:
+        return await _run(conn)
 
 
 async def update_call_log(

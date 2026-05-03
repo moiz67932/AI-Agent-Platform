@@ -21,13 +21,8 @@ from __future__ import annotations
 import os
 import inspect
 import logging
+import re
 from typing import Dict, Any, Optional
-
-from livekit.plugins import (
-    openai as openai_plugin,
-    deepgram as deepgram_plugin,
-    cartesia as cartesia_plugin,
-)
 
 from .azure_tts import create_azure_tts
 from .urdu_prompt import URDU_SYSTEM_PROMPT, URDU_FILLER_PHRASES
@@ -36,10 +31,106 @@ from config import FILLER_PHRASES
 logger = logging.getLogger("snappy_agent")
 
 
+COMMON_MED_SPA_KEYTERMS = [
+    "HydraFacial",
+    "Botox",
+    "Dysport",
+    "Xeomin",
+    "filler",
+    "dermal filler",
+    "Sculptra",
+    "Kybella",
+    "PDO threads",
+    "PRP",
+    "PRF",
+    "microneedling",
+    "exosomes",
+    "chemical peel",
+    "dermaplaning",
+    "Plasma Pen",
+    "hair restoration",
+    "Skinbetter",
+    "ZO Skin Health",
+]
+
+
+def build_stt_keyterms_from_context(
+    *,
+    clinic_info: Optional[Dict[str, Any]] = None,
+    settings: Optional[Dict[str, Any]] = None,
+    industry_type: Optional[str] = None,
+    knowledge_articles: Optional[list[Dict[str, Any]]] = None,
+) -> list[str]:
+    """Build Deepgram keyterms from already-loaded runtime context."""
+    terms: list[str] = []
+
+    def add(value: Any) -> None:
+        text = " ".join(str(value or "").split()).strip()
+        if not text or len(text) > 50 or len(text.split()) > 5:
+            return
+        key = text.lower()
+        if key not in {item.lower() for item in terms}:
+            terms.append(text)
+
+    clinic_info = clinic_info or {}
+    settings = settings or {}
+    add(clinic_info.get("name"))
+    for field in ("provider_names", "providers", "team_members", "staff"):
+        values = clinic_info.get(field) or settings.get(field)
+        if isinstance(values, str):
+            for part in re.split(r"[,;]\s*", values):
+                add(part)
+        elif isinstance(values, list):
+            for item in values:
+                if isinstance(item, dict):
+                    add(item.get("name") or item.get("full_name") or item.get("display_name"))
+                else:
+                    add(item)
+
+    config_json = settings.get("config_json") or {}
+    if isinstance(config_json, str):
+        try:
+            import json
+            config_json = json.loads(config_json)
+        except Exception:
+            config_json = {}
+    services = []
+    if isinstance(config_json, dict):
+        services = config_json.get("services") or config_json.get("service_catalog") or []
+    if isinstance(services, list):
+        for service in services:
+            if isinstance(service, dict):
+                add(service.get("name") or service.get("display_name"))
+                aliases = service.get("aliases") or service.get("keywords") or []
+                if isinstance(aliases, str):
+                    aliases = re.split(r"[,;]\s*", aliases)
+                if isinstance(aliases, list):
+                    for alias in aliases:
+                        add(alias)
+            else:
+                add(service)
+
+    if (industry_type or "").lower() in {"med_spa", "spa", "aesthetics"}:
+        for term in COMMON_MED_SPA_KEYTERMS:
+            add(term)
+
+    for article in knowledge_articles or []:
+        if not isinstance(article, dict):
+            continue
+        add(article.get("title"))
+        body = str(article.get("body") or "")
+        for term in COMMON_MED_SPA_KEYTERMS:
+            if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", body, flags=re.IGNORECASE):
+                add(term)
+
+    return terms[:100]
+
+
 def build_english_pipeline(
     agent_lang: str = "en-US",
     stt_aggressive: bool = True,
     latency_debug: bool = False,
+    stt_keyterms: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     """
     Build the original English pipeline components.
@@ -47,12 +138,30 @@ def build_english_pipeline(
     Returns dict with keys: stt, llm, tts, system_prompt_template, filler_phrases, pipeline_name
     This is the EXACT same logic previously in entrypoint(), just extracted.
     """
+    from livekit.plugins import (
+        openai as openai_plugin,
+        deepgram as deepgram_plugin,
+        cartesia as cartesia_plugin,
+    )
+
     # --- STT (Deepgram English) ---
     if os.getenv("DEEPGRAM_API_KEY"):
         stt_config: Dict[str, Any] = {
             "model": "nova-2-general",
             "language": agent_lang,
         }
+        keyterms = [term for term in (stt_keyterms or []) if term]
+        if keyterms:
+            try:
+                stt_sig = inspect.signature(deepgram_plugin.STT.__init__)
+                stt_params = set(stt_sig.parameters.keys())
+                if "keyterm" in stt_params or "kwargs" in str(stt_sig):
+                    stt_config["keyterm"] = keyterms
+                elif "keywords" in stt_params:
+                    stt_config["keywords"] = keyterms
+                logger.info("[STT-EN] Deepgram keyterms enabled count=%s", len(keyterms))
+            except Exception:
+                pass
         if stt_aggressive:
             try:
                 stt_sig = inspect.signature(deepgram_plugin.STT.__init__)
@@ -112,6 +221,11 @@ def build_urdu_pipeline(
 
     Returns dict with keys: stt, llm, tts, system_prompt_template, filler_phrases, pipeline_name
     """
+    from livekit.plugins import (
+        openai as openai_plugin,
+        deepgram as deepgram_plugin,
+    )
+
     urdu_stt_lang = os.getenv("URDU_STT_LANGUAGE", "hi")
     urdu_llm_model = os.getenv("URDU_LLM_MODEL", "gpt-4o-mini")
     urdu_tts_voice = os.getenv("URDU_TTS_VOICE", "ur-PK-UzmaNeural")
@@ -177,6 +291,7 @@ def get_pipeline_components(
     agent_lang: str = "en-US",
     stt_aggressive: bool = True,
     latency_debug: bool = False,
+    stt_keyterms: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     """
     Master router — returns the correct pipeline components based on config.
@@ -202,4 +317,5 @@ def get_pipeline_components(
             agent_lang=agent_lang,
             stt_aggressive=stt_aggressive,
             latency_debug=latency_debug,
+            stt_keyterms=stt_keyterms,
         )

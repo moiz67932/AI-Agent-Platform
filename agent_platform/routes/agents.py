@@ -7,12 +7,12 @@ import json
 import os
 from functools import lru_cache
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from agent_platform.server_manager import AgentServerManager
-from agent_platform.twilio_provisioner import TwilioProvisioner
+from agent_platform.telnyx_provisioner import TelnyxProvisioner
 from agent_platform.utils import generate_subdomain
 from database.db import (
     db_transaction,
@@ -25,6 +25,7 @@ from database.db import (
     release_port,
     update_agent_fields,
 )
+from services.telnyx_voice import TelnyxVoiceService
 
 router = APIRouter(tags=["agents"])
 
@@ -36,9 +37,15 @@ def get_server_manager() -> AgentServerManager:
 
 
 @lru_cache(maxsize=1)
-def get_twilio_provisioner() -> TwilioProvisioner:
-    """Return the shared Twilio/LiveKit provisioner."""
-    return TwilioProvisioner()
+def get_telnyx_provisioner() -> TelnyxProvisioner:
+    """Return the shared Telnyx/LiveKit provisioner."""
+    return TelnyxProvisioner()
+
+
+@lru_cache(maxsize=1)
+def get_telnyx_voice_service() -> TelnyxVoiceService:
+    """Return the shared Telnyx voice command service."""
+    return TelnyxVoiceService()
 
 
 def _normalize_config_json(value: Any) -> dict[str, Any]:
@@ -103,6 +110,10 @@ def _build_runtime_agent_config(agent_row: dict[str, Any]) -> dict[str, Any]:
     config.setdefault("clinic_id", _json_safe(agent_row.get("clinic_id")))
     config.setdefault("livekit_agent_name", agent_row.get("livekit_agent_name"))
     config.setdefault("phone_number", agent_row.get("phone_number"))
+    config.setdefault("telephony_provider", agent_row.get("telephony_provider") or "telnyx")
+    config.setdefault("external_number_id", agent_row.get("external_number_id"))
+    config.setdefault("voice_connection_id", agent_row.get("voice_connection_id"))
+    config.setdefault("provider_config_json", _json_safe(_normalize_config_json(agent_row.get("provider_config_json"))))
     config.setdefault("sip_auth_username", agent_row.get("sip_auth_username"))
     config.setdefault("sip_auth_password", agent_row.get("sip_auth_password"))
 
@@ -126,7 +137,7 @@ async def _run_publish(agent_id: str) -> None:
     """Full publish pipeline — can be called directly or as a background task."""
     agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
-    twilio_provisioner = get_twilio_provisioner()
+    telnyx_provisioner = get_telnyx_provisioner()
     async with db_transaction() as connection:
         agent_row = await get_agent(agent_id, connection=connection)
         if agent_row is None:
@@ -154,7 +165,7 @@ async def _run_publish(agent_id: str) -> None:
     country = str(_build_runtime_agent_config(enriched_row).get("country") or "US")
 
     try:
-        await twilio_provisioner.provision_number(agent_id, webhook_base_url, country=country)
+        await telnyx_provisioner.provision_number(agent_id, webhook_base_url, country=country)
         latest_row = await get_agent_with_clinic(agent_id)
         if latest_row is None:
             return
@@ -183,12 +194,13 @@ async def _run_publish(agent_id: str) -> None:
             pass
         current_agent = await get_agent(agent_id)
         if current_agent and (
-            current_agent.get("twilio_phone_sid")
+            current_agent.get("external_number_id")
+            or current_agent.get("voice_connection_id")
             or current_agent.get("livekit_dispatch_rule_id")
             or current_agent.get("livekit_trunk_id")
         ):
             try:
-                await twilio_provisioner.release_number(agent_id)
+                await telnyx_provisioner.deprovision_agent(agent_id)
             except Exception:
                 pass
         async with db_transaction() as connection:
@@ -286,13 +298,14 @@ async def publish_agent(agent_id: str) -> dict[str, Any]:
         "livekit_agent_name": latest_agent.get("livekit_agent_name"),
         "livekit_dispatch_rule_id": latest_agent.get("livekit_dispatch_rule_id"),
         "livekit_trunk_id": latest_agent.get("livekit_trunk_id"),
-        "twilio_phone_sid": latest_agent.get("twilio_phone_sid"),
+        "external_number_id": latest_agent.get("external_number_id"),
+        "voice_connection_id": latest_agent.get("voice_connection_id"),
     }
 
 
 @router.post("/api/agents/{agent_id}/unpublish")
 async def unpublish_agent(agent_id: str) -> dict[str, Any]:
-    """Remove a deployed agent and release its reserved telephony resources.
+    """Remove a deployed agent and disable its active telephony routing.
 
     Params:
         agent_id: Agent UUID from the route path.
@@ -303,7 +316,7 @@ async def unpublish_agent(agent_id: str) -> dict[str, Any]:
     """
     agent_id = _normalize_agent_id(agent_id)
     server_manager = get_server_manager()
-    twilio_provisioner = get_twilio_provisioner()
+    telnyx_provisioner = get_telnyx_provisioner()
     agent_row = await get_agent(agent_id)
     if agent_row is None:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -313,8 +326,12 @@ async def unpublish_agent(agent_id: str) -> dict[str, Any]:
         int(agent_row["port"]) if agent_row.get("port") is not None else None,
         str(agent_row["subdomain"]) if agent_row.get("subdomain") else None,
     )
-    if agent_row.get("twilio_phone_sid") or agent_row.get("livekit_dispatch_rule_id") or agent_row.get("livekit_trunk_id"):
-        await twilio_provisioner.release_number(agent_id)
+    if (
+        agent_row.get("voice_connection_id")
+        or agent_row.get("livekit_dispatch_rule_id")
+        or agent_row.get("livekit_trunk_id")
+    ):
+        await telnyx_provisioner.deprovision_agent(agent_id)
 
     async with db_transaction() as connection:
         if agent_row.get("port"):
@@ -330,6 +347,61 @@ async def unpublish_agent(agent_id: str) -> dict[str, Any]:
             connection=connection,
         )
     return {"agent_id": agent_id, "status": "offline"}
+
+
+@router.post("/api/agents/{agent_id}/outbound-call")
+async def make_outbound_demo_call(agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Place an outbound demo call from the agent's assigned Telnyx number."""
+
+    agent_id = _normalize_agent_id(agent_id)
+    agent_row = await get_agent(agent_id)
+    if agent_row is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if str(agent_row.get("status") or "").lower() != "live":
+        raise HTTPException(status_code=409, detail="Agent must be live before placing outbound calls")
+
+    to_number = str(payload.get("to_number") or payload.get("phone_number") or "").strip()
+    if not to_number:
+        raise HTTPException(status_code=400, detail="to_number is required")
+
+    from_number = str(agent_row.get("phone_number") or "").strip()
+    voice_connection_id = str(agent_row.get("voice_connection_id") or "").strip()
+    if not from_number or not voice_connection_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Agent is missing a provisioned Telnyx number or Call Control Application",
+        )
+
+    subdomain = str(agent_row.get("subdomain") or "").strip()
+    port = int(agent_row.get("port") or 0)
+    webhook_url = None
+    if subdomain and port:
+        webhook_url = f"{get_server_manager().build_webhook_base_url(subdomain, port)}/telnyx/voice"
+
+    response = await get_telnyx_voice_service().make_outbound_call(
+        to_number=to_number,
+        from_number=from_number,
+        voice_connection_id=voice_connection_id,
+        command_id=f"outbound-demo-{uuid4()}",
+        webhook_url=webhook_url,
+        client_state={
+            "agent_id": agent_id,
+            "mode": "outbound_demo",
+            "bridge_to_agent": True,
+            "agent_number": from_number,
+        },
+    )
+
+    return {
+        "agent_id": agent_id,
+        "status": "initiated",
+        "to_number": to_number,
+        "from_number": from_number,
+        "provider_call_id": response.get("call_control_id"),
+        "provider_call_leg_id": response.get("call_leg_id"),
+        "provider_call_session_id": response.get("call_session_id"),
+    }
 
 
 @router.post("/api/agents/{agent_id}/restart")
@@ -434,7 +506,7 @@ async def get_agent_status(agent_id: str) -> dict[str, Any]:
         derived_status = "error"
 
     # Approximate progress % for the deploying state so the frontend can show a bar.
-    # Real stages: allocate (10%) → provision Twilio (30%) → SSH upload (60%) → pip install (80%) → health (100%)
+    # Real stages: allocate (10%) → provision Telnyx (30%) → SSH upload (60%) → pip install (80%) → health (100%)
     # Since we can't track sub-stage here, we infer from time elapsed since updated_at.
     deploy_progress: int | None = None
     if derived_status == "deploying":

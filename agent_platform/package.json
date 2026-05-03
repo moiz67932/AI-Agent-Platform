@@ -2,6 +2,9 @@
   "name": "voiceai-platform",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": ["frontend", "backend"],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
