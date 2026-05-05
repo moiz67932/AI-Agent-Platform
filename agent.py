@@ -126,6 +126,7 @@ from utils.turn_taking import (
 from utils.agent_flow import (
     has_date_reference,
     has_time_reference,
+    looks_like_phone_input,
     looks_like_delivery_follow_up_fragment,
     normalize_patient_name,
     resolve_confirmation_intent,
@@ -138,6 +139,7 @@ from utils.agent_flow import (
 from tools.assistant_tools import (
     AssistantTools,
     _delivery_question_text,
+    _phone_confirmation_question,
     prune_clinic_response_for_tts,
     update_global_clinic_info,
 )
@@ -244,7 +246,7 @@ WORKFLOW — 1 question at a time, 1-2 sentences max:
 4. Time -> call update_patient_record(time_suggestion="...") with natural language like "tomorrow at 2pm".
    - If slot is taken, the tool returns alternatives — offer them immediately.
    - If user says a month without a day (e.g. "February at 2pm") -> ask which day.
-5. ONLY after name AND reason AND time are ALL captured: ask "Can I use the number ending in the caller ID's last 4 digits for your appointment confirmation and reminders?"
+5. ONLY after name AND reason AND time are ALL captured: ask "Can I use the number ending in 1234 for your appointment confirmation and reminders?" using the ACTUAL last 4 digits when available.
    - NEVER ask for phone confirmation until all three of name, reason, and time are confirmed.
    - If caller says "yes" / "sure" / "use this number" / "the one I'm calling from" -> call confirm_phone(confirmed=True) IMMEDIATELY. Do not ask again.
    - If caller says "no" or gives a different number -> call update_patient_record(phone=...).
@@ -657,6 +659,9 @@ def _build_missing_slot_prompt(state: PatientState) -> str:
             return "Perfect. What time works best for you?"
         return "Perfect. What day and time would you like?"
     if "phone" in missing:
+        phone_candidate = state.phone_pending or state.detected_phone
+        if phone_candidate:
+            return _phone_confirmation_question(state, str(phone_candidate))
         return "What number should I use?"
     if state.appointment_booked:
         return "Thanks. I've got that noted."
@@ -982,6 +987,33 @@ async def _handle_deterministic_confirmation_turn(
 
     caller_phone = state.phone_pending or state.detected_phone or state.phone_e164
     confirm_intent = resolve_confirmation_intent(normalized, caller_e164=caller_phone)
+
+    if pending == "phone" and state.contact_phase_started:
+        if confirm_intent is None and looks_like_phone_input(normalized):
+            cancel_scheduled_filler()
+            interrupt_filler(force=True)
+            if mark_direct_response is not None:
+                mark_direct_response()
+            await assistant_tools.update_patient_record(phone=text)  # type: ignore[call-arg]
+            state.pending_confirm = "phone"
+            state.pending_confirm_field = "phone"
+            state.phone_confirm_reask_count = 0
+            phone_prompt = _phone_confirmation_question(state, state.phone_pending or str(text))
+            resolved_safe_say(phone_prompt)
+            return "consumed"
+
+        if confirm_intent is None:
+            if state.phone_confirm_reask_count < 1:
+                state.phone_confirm_reask_count += 1
+                cancel_scheduled_filler()
+                interrupt_filler(force=True)
+                if mark_direct_response is not None:
+                    mark_direct_response()
+                phone_prompt = _phone_confirmation_question(state, state.phone_pending or str(text))
+                resolved_safe_say(phone_prompt)
+                return "consumed"
+            return "none"
+
     if confirm_intent is None:
         return "none"
 
@@ -1007,6 +1039,7 @@ async def _handle_deterministic_confirmation_turn(
     if pending == "phone" and state.contact_phase_started:
         t0 = time.perf_counter()
         await assistant_tools.confirm_phone(confirmed=confirm_intent)  # type: ignore[call-arg]
+        state.phone_confirm_reask_count = 0
         try:
             if hasattr(session, "interrupt"):
                 session.interrupt()
@@ -1969,6 +2002,9 @@ async def _entrypoint_impl(ctx: JobContext):
             def _mark_direct_response() -> None:
                 if _current_turn:
                     _current_turn.mark("direct_say")
+
+            if state.pending_confirm or state.pending_confirm_field:
+                _cancel_pending_continuation("deterministic_confirmation_preempt")
 
             result = await _handle_deterministic_confirmation_turn(
                 text=text,

@@ -1700,6 +1700,7 @@ class AssistantTools:
                 state.phone_last4 = str(last4) if last4 else ""
                 state.phone_confirmed = False
                 state.phone_source = "user_spoken"
+                state.phone_confirm_reask_count = 0
                 updates.append(f"phone_pending=***{state.phone_last4}")
                 logger.info(f"[TOOL] Phone pending: ***{state.phone_last4}")
 
@@ -1806,7 +1807,7 @@ class AssistantTools:
                     cleaned_suggestion if has_date_reference(cleaned_suggestion) else "",
                     cleaned_suggestion if has_time_reference(cleaned_suggestion) else "",
                     known_date_text or previous_dt_text or "",
-                    (result.get("datetime").isoformat() if result.get("datetime") else None),
+                    (result_datetime.isoformat() if (result_datetime := result.get("datetime")) else None),
                 )
 
                 # Handle date-only result (no time was specified by user)
@@ -2045,6 +2046,7 @@ class AssistantTools:
                 return "No phone number to confirm. Ask for the number first."
             state.phone_e164 = str(phone_candidate)
             state.phone_confirmed = True
+            state.phone_confirm_reask_count = 0
             using_caller_number = (state.phone_source or "").lower() == "sip"
             state.caller_id_accepted = using_caller_number
             state.using_caller_number = using_caller_number
@@ -2065,6 +2067,7 @@ class AssistantTools:
             state.phone_last4 = None
             state.phone_confirmed = False
             state.phone_source = None
+            state.phone_confirm_reask_count = 0
             state.using_caller_number = False
             state.confirmed_contact_number_source = None
             state.caller_id_accepted = False
@@ -2669,7 +2672,11 @@ class AssistantTools:
         logger.info(f"[SPA] Booking second appointment: {service_type} at {time_suggestion}")
 
         # Use the existing update_patient_record flow for the second booking
-        result = await self.update_patient_record(time_suggestion=time_suggestion, reason=service_type)
+        result = await AssistantTools.update_patient_record(
+            self,
+            time_suggestion=time_suggestion,
+            reason=service_type,
+        )
         state.second_appointment_needed = False
         state.patch_test_booked = True
         _refresh_memory()

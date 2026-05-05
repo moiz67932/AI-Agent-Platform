@@ -147,6 +147,7 @@ class PatientState:
     last_confirm_fingerprint: Optional[str] = None
     last_confirm_ts: float = 0.0
     turn_consumed: bool = False
+    phone_confirm_reask_count: int = 0
 
     # Context
     tz: str = DEFAULT_TZ
@@ -239,7 +240,10 @@ class PatientState:
             else:
                 lines.append("• PHONE: confirmed")
         elif self.phone_pending or self.detected_phone:
-            lines.append("• PHONE: pending confirmation — Ask: 'Can I use the number you're calling from for your appointment confirmation and reminders?'")
+            if self.phone_last4:
+                lines.append(f"• PHONE: pending caller ID confirmation, ending in {self.phone_last4}.")
+            else:
+                lines.append("• PHONE: pending caller ID confirmation — ask to confirm this number.")
         else:
             lines.append("• PHONE: ? — Ask naturally")
 

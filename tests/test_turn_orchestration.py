@@ -12,7 +12,8 @@ from agent import (
 from config import logger as app_logger
 from models.state import PatientState
 from utils.call_logger import StructuredLogger
-from utils.turn_taking import ExpectedUserSlot, preview_turn
+from industry_profiles import get_profile
+from utils.turn_taking import ExpectedUserSlot, PolicyAction, preview_turn
 
 
 class _FakeSession:
@@ -217,6 +218,92 @@ class DeterministicTurnTests(unittest.IsolatedAsyncioTestCase):
             "Perfect, I'll use the number ending in 0001. What name should I put on the appointment?",
         )
 
+    async def test_phone_confirmation_alt_number_routes_to_update_and_reasks(self) -> None:
+        from datetime import datetime
+
+        state = PatientState(
+            full_name="Moiz",
+            reason="HydraFacial",
+            dt_local=datetime(2026, 5, 1, 13, 0),
+            time_status="valid",
+            phone_pending="+13105558914",
+            phone_last4="8914",
+            pending_confirm="phone",
+            pending_confirm_field="phone",
+            contact_phase_started=True,
+        )
+        state.phone_source = "sip"
+        session = _FakeSession()
+
+        async def _update_patient_record(*, phone: str):
+            state.phone_pending = "+923351897839"
+            state.phone_last4 = "7839"
+            state.phone_source = "user_spoken"
+            return "Noted."
+
+        tools = SimpleNamespace(
+            confirm_phone=AsyncMock(),
+            confirm_email=AsyncMock(),
+            confirm_and_book_appointment=AsyncMock(),
+            update_patient_record=AsyncMock(side_effect=_update_patient_record),
+        )
+
+        result = await _handle_deterministic_confirmation_turn(
+            text="03351897839",
+            state=state,
+            assistant_tools=tools,
+            session=session,
+            cancel_scheduled_filler=Mock(),
+            interrupt_filler=Mock(),
+            refresh_memory_async=AsyncMock(),
+            mark_direct_response=Mock(),
+        )
+
+        self.assertEqual(result, "consumed")
+        self.assertEqual(tools.update_patient_record.await_count, 1)
+        self.assertEqual(session.say_calls[0][0], "Is this the right number to send your confirmation to?")
+
+    async def test_phone_confirmation_noise_reasks_with_last4(self) -> None:
+        from datetime import datetime
+
+        state = PatientState(
+            full_name="Moiz",
+            reason="HydraFacial",
+            dt_local=datetime(2026, 5, 1, 13, 0),
+            time_status="valid",
+            phone_pending="+13105558914",
+            phone_last4="8914",
+            pending_confirm="phone",
+            pending_confirm_field="phone",
+            contact_phase_started=True,
+        )
+        state.phone_source = "sip"
+        session = _FakeSession()
+
+        tools = SimpleNamespace(
+            confirm_phone=AsyncMock(),
+            confirm_email=AsyncMock(),
+            confirm_and_book_appointment=AsyncMock(),
+            update_patient_record=AsyncMock(),
+        )
+
+        result = await _handle_deterministic_confirmation_turn(
+                text="Yaşa",
+            state=state,
+            assistant_tools=tools,
+            session=session,
+            cancel_scheduled_filler=Mock(),
+            interrupt_filler=Mock(),
+            refresh_memory_async=AsyncMock(),
+            mark_direct_response=Mock(),
+        )
+
+        self.assertEqual(result, "consumed")
+        self.assertEqual(
+            session.say_calls[0][0],
+            "Can I use the number ending in 8914 for your appointment confirmation and reminders?",
+        )
+
     async def test_duplicate_confirmation_is_consumed_without_second_action(self) -> None:
         from datetime import datetime
 
@@ -312,6 +399,27 @@ class FillerAndStateCaptureTests(unittest.TestCase):
         self.assertEqual(decision.action.value, "fast_path")
         self.assertEqual(decision.deterministic_route, "clinic_info.answer")
         self.assertIn("teeth whitening", decision.filler_text or "")
+
+    def test_phone_confirmation_does_not_wait_for_continuation(self) -> None:
+        snapshot, decision = preview_turn(
+            "Use the number I'm calling from",
+            patient_state=PatientState(
+                phone_pending="+13105558914",
+                phone_last4="8914",
+                pending_confirm="phone",
+                pending_confirm_field="phone",
+            ),
+            expected_user_slot=ExpectedUserSlot.PHONE_CONFIRMATION.value,
+            silence_ms=900,
+        )
+
+        self.assertEqual(snapshot.expected_slot_status, "satisfied")
+        self.assertNotEqual(decision.action, PolicyAction.WAIT)
+
+    def test_med_spa_profile_loaded_for_med_spa_industry(self) -> None:
+        profile = get_profile("med_spa")
+
+        self.assertEqual(profile.industry_type, "med_spa")
 
 
 class LoggingConfigTests(unittest.TestCase):

@@ -98,6 +98,16 @@ class AssistantToolsTests(unittest.IsolatedAsyncioTestCase):
             "Can I use the number ending in 1234 for your appointment confirmation and reminders?",
         )
 
+    def test_phone_confirmation_question_mentions_last4_for_prefilled_caller_id(self) -> None:
+        state = PatientState(phone_source="sip", phone_last4="8914")
+
+        question = _phone_confirmation_question(state, "+13103318914")
+
+        self.assertEqual(
+            question,
+            "Can I use the number ending in 8914 for your appointment confirmation and reminders?",
+        )
+
     def test_phone_confirmation_question_for_spoken_number_avoids_repeating_digits(self) -> None:
         state = PatientState(phone_source="user_spoken", phone_last4="1234")
 

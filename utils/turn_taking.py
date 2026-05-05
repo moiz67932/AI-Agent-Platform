@@ -12,7 +12,12 @@ from typing import Any, Optional
 from config import logger
 from models.state import PatientState
 from services.extraction_service import extract_name_quick, extract_reason_quick
-from utils.agent_flow import has_date_reference, has_time_reference, resolve_confirmation_intent
+from utils.agent_flow import (
+    has_date_reference,
+    has_time_reference,
+    looks_like_phone_input,
+    resolve_confirmation_intent,
+)
 
 NAME_REPLY_RE = re.compile(r"^[A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){0,2}$")
 
@@ -650,11 +655,12 @@ class StreamingTurnTracker:
                 or patient_state.detected_phone
                 or patient_state.phone_e164
             )
-            snap.expected_slot_status = (
-                "satisfied"
-                if resolve_confirmation_intent(text, caller_e164=caller_phone) is not None
-                else "unsatisfied"
-            )
+            if resolve_confirmation_intent(text, caller_e164=caller_phone) is not None:
+                snap.expected_slot_status = "satisfied"
+            elif looks_like_phone_input(text):
+                snap.expected_slot_status = "satisfied"
+            else:
+                snap.expected_slot_status = "unsatisfied"
             return
 
         snap.expected_slot_status = None
@@ -698,6 +704,14 @@ class StreamingTurnTracker:
             reasons.append(f"expected_slot:{snap.expected_user_slot}")
             if snap.expected_slot_status:
                 reasons.append(f"expected_slot_status:{snap.expected_slot_status}")
+
+        if (
+            snap.expected_user_slot == ExpectedUserSlot.PHONE_CONFIRMATION.value
+            and snap.expected_slot_status == "satisfied"
+        ):
+            snap.completion_label = CompletionLabel.COMPLETE
+            snap.completion_reasons = reasons + ["expected_slot_phone_confirmation_satisfied"]
+            return
 
         if (
             snap.expected_user_slot in {
